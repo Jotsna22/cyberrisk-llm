@@ -16,6 +16,8 @@ import hashlib
 import json
 import os
 import re
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -149,7 +151,7 @@ class LLMExtractor:
 
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_GEMINI_MODEL = os.environ.get("CYBERRISK_GEMINI_MODEL", "gemini-2.5-flash")
+DEFAULT_GEMINI_MODEL = os.environ.get("CYBERRISK_GEMINI_MODEL", "gemini-3.8-flash")
 
 
 class GeminiExtractor:
@@ -201,7 +203,19 @@ class GeminiExtractor:
         return env
 
 
-def _default_gemini_transport(url: str, headers: dict, body: dict) -> dict:
-    request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
-    with urllib.request.urlopen(request, timeout=120) as resp:  # noqa: S310 - fixed https endpoint
-        return json.loads(resp.read().decode())
+def _default_gemini_transport(url: str, headers: dict, body: dict, retries: int = 4) -> dict:
+    """POST with exponential backoff on transient errors (429/5xx and network failures)."""
+    data = json.dumps(body).encode()
+    for attempt in range(retries + 1):
+        request = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=120) as resp:  # noqa: S310 - fixed https endpoint
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (429, 500, 502, 503, 504) or attempt == retries:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == retries:
+                raise
+        time.sleep(2 ** attempt * 2)
+    raise AssertionError("unreachable")

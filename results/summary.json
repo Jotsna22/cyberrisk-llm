@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_utc": "2026-11-25T20:55:52+00:00",
+    "generated_utc": "2026-11-25T22:09:49+00:00",
     "templates": [
       "small_lab",
       "hpc",
@@ -10,7 +10,7 @@
     "seeds_per_template": 20,
     "environments": 80,
     "budget": 4.0,
-    "llm_extractor": "not run (no API key available in the evaluation environment)"
+    "llm_extractor": "gemini-3.5-flash-lite"
   },
   "summary": [
     {
@@ -112,6 +112,32 @@
       "vuln_f1_sd": 0.0,
       "link_f1_mean": 1.0,
       "link_f1_sd": 0.0,
+      "path_precision_at5_mean": 1.0,
+      "path_precision_at5_sd": 0.0,
+      "at_risk_precision": 1.0,
+      "at_risk_recall": 1.0
+    },
+    {
+      "config": "graph_llm_extraction",
+      "n": 80,
+      "risk_reduction_mean": 0.9969431169674463,
+      "risk_reduction_sd": 0.01676772195739598,
+      "controls_mean": 2.05,
+      "controls_sd": 1.0050505371763556,
+      "budget_used_mean": 2.25,
+      "budget_used_sd": 1.073265453733239,
+      "at_risk_before_mean": 1.7875,
+      "at_risk_before_sd": 0.9768685438167892,
+      "at_risk_after_mean": 0.025,
+      "at_risk_after_sd": 0.15710997518871125,
+      "asset_f1_mean": 1.0,
+      "asset_f1_sd": 0.0,
+      "exposed_f1_mean": 1.0,
+      "exposed_f1_sd": 0.0,
+      "vuln_f1_mean": 0.9995,
+      "vuln_f1_sd": 0.004472135954999571,
+      "link_f1_mean": 0.9971153846153846,
+      "link_f1_sd": 0.01470632293902652,
       "path_precision_at5_mean": 1.0,
       "path_precision_at5_sd": 0.0,
       "at_risk_precision": 1.0,

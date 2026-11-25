@@ -18,7 +18,7 @@ text reports ──► extraction ──► Environment model ──► attack g
 | Greedy defense planner, CVSS-only and rule-based baselines | Implemented and tested |
 | Synthetic environments (4 topologies) and report generator | Implemented and tested |
 | Rule-based extractor (no LLM) | Implemented and tested |
-| LLM extractors (`GeminiExtractor`, `LLMExtractor`) | Implemented and tested with stub transports/clients. The Gemini run needs a key and network access to the Gemini API, so it is not included in the committed results. |
+| LLM extractors (`GeminiExtractor`, `LLMExtractor`) | Implemented and tested with stub transports/clients. The committed results include a Gemini run (`gemini-3.5-flash-lite`, cached under `results/llm_cache/`); `gemini-3.8-flash` was overloaded (503) when it was attempted. |
 | Evaluation harness, robustness experiments | Implemented; results in `results/` |
 | NVD / MITRE ATT&CK ingestion | **Not implemented.** All CVE IDs are synthetic (`SYN-CVE-xxxx`). |
 
@@ -57,7 +57,7 @@ export GEMINI_API_KEY=...   # never commit this value
 cyberrisk evaluate --seeds 20 --llm gemini
 ```
 
-The model defaults to `gemini-2.5-flash` and can be changed with `CYBERRISK_GEMINI_MODEL`. An Anthropic-backed `LLMExtractor` is also included (requires `ANTHROPIC_API_KEY` and the `llm` extra).
+The model defaults to `gemini-3.8-flash` and can be changed with `CYBERRISK_GEMINI_MODEL`. An Anthropic-backed `LLMExtractor` is also included (requires `ANTHROPIC_API_KEY` and the `llm` extra).
 
 ## Tests
 
@@ -102,7 +102,7 @@ Full tables: `results/summary.json`, `results/per_environment.csv`, `results/mod
 
 ## Limitations
 
-* The LLM path, which is the central research claim, is **not evaluated** in the committed results. Run `cyberrisk evaluate --llm gemini` to add it.
+* The LLM path, which is the central research claim, is evaluated in the committed results with `gemini-3.5-flash-lite` (one model, one run, synthetic reports). Re-run with `cyberrisk evaluate --llm gemini` to reproduce.
 * All data is synthetic, and the risk model is a simplified, hand-designed scoring model. The ground truth uses the same scoring model, so ranking accuracy shows pipeline fidelity, not real-world validity.
 * The `cvss_only` and `rule_based` baselines use the true vulnerability list and exposure flags (a scanner plus inventory). This is a favorable assumption for them.
 * The attack graph ignores privilege escalation across hops and lateral movement chains beyond `MAX_PATH_EDGES = 4`.
