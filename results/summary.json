@@ -1,0 +1,179 @@
+{
+  "meta": {
+    "generated_utc": "2026-11-25T20:55:52+00:00",
+    "templates": [
+      "small_lab",
+      "hpc",
+      "cloud",
+      "distributed"
+    ],
+    "seeds_per_template": 20,
+    "environments": 80,
+    "budget": 4.0,
+    "llm_extractor": "not run (no API key available in the evaluation environment)"
+  },
+  "summary": [
+    {
+      "config": "cvss_only",
+      "n": 80,
+      "risk_reduction_mean": 0.7590642168732195,
+      "risk_reduction_sd": 0.29090926481788015,
+      "controls_mean": 4,
+      "controls_sd": 0.0,
+      "budget_used_mean": 4.0,
+      "budget_used_sd": 0.0,
+      "at_risk_before_mean": 1.7875,
+      "at_risk_before_sd": 0.9768685438167892,
+      "at_risk_after_mean": 0.6375,
+      "at_risk_after_sd": 0.8151065784161082,
+      "asset_f1_mean": NaN,
+      "asset_f1_sd": NaN,
+      "exposed_f1_mean": NaN,
+      "exposed_f1_sd": NaN,
+      "vuln_f1_mean": NaN,
+      "vuln_f1_sd": NaN,
+      "link_f1_mean": NaN,
+      "link_f1_sd": NaN,
+      "path_precision_at5_mean": NaN,
+      "path_precision_at5_sd": NaN,
+      "at_risk_precision": null,
+      "at_risk_recall": null
+    },
+    {
+      "config": "rule_based",
+      "n": 80,
+      "risk_reduction_mean": 0.8908074968549449,
+      "risk_reduction_sd": 0.18604837048882508,
+      "controls_mean": 4,
+      "controls_sd": 0.0,
+      "budget_used_mean": 4.0,
+      "budget_used_sd": 0.0,
+      "at_risk_before_mean": 1.7875,
+      "at_risk_before_sd": 0.9768685438167892,
+      "at_risk_after_mean": 0.2125,
+      "at_risk_after_sd": 0.49539014161069383,
+      "asset_f1_mean": NaN,
+      "asset_f1_sd": NaN,
+      "exposed_f1_mean": NaN,
+      "exposed_f1_sd": NaN,
+      "vuln_f1_mean": NaN,
+      "vuln_f1_sd": NaN,
+      "link_f1_mean": NaN,
+      "link_f1_sd": NaN,
+      "path_precision_at5_mean": NaN,
+      "path_precision_at5_sd": NaN,
+      "at_risk_precision": null,
+      "at_risk_recall": null
+    },
+    {
+      "config": "graph_rule_extraction",
+      "n": 80,
+      "risk_reduction_mean": 0.0,
+      "risk_reduction_sd": 0.0,
+      "controls_mean": 0.0125,
+      "controls_sd": 0.11180339887498948,
+      "budget_used_mean": 0.0125,
+      "budget_used_sd": 0.11180339887498948,
+      "at_risk_before_mean": 1.7875,
+      "at_risk_before_sd": 0.9768685438167892,
+      "at_risk_after_mean": 1.7875,
+      "at_risk_after_sd": 0.9768685438167892,
+      "asset_f1_mean": 0.8217907092907093,
+      "asset_f1_sd": 0.11351144661072031,
+      "exposed_f1_mean": 0.32916666666666666,
+      "exposed_f1_sd": 0.4484502145575458,
+      "vuln_f1_mean": 0.49273434206251343,
+      "vuln_f1_sd": 0.11895777220333303,
+      "link_f1_mean": 0.5138605838605839,
+      "link_f1_sd": 0.21652912842901997,
+      "path_precision_at5_mean": 0.0125,
+      "path_precision_at5_sd": 0.11180339887498948,
+      "at_risk_precision": null,
+      "at_risk_recall": 0.0
+    },
+    {
+      "config": "graph_oracle_upper_bound",
+      "n": 80,
+      "risk_reduction_mean": 0.9969431169674463,
+      "risk_reduction_sd": 0.01676772195739598,
+      "controls_mean": 2.05,
+      "controls_sd": 1.0050505371763556,
+      "budget_used_mean": 2.25,
+      "budget_used_sd": 1.073265453733239,
+      "at_risk_before_mean": 1.7875,
+      "at_risk_before_sd": 0.9768685438167892,
+      "at_risk_after_mean": 0.025,
+      "at_risk_after_sd": 0.15710997518871125,
+      "asset_f1_mean": 1.0,
+      "asset_f1_sd": 0.0,
+      "exposed_f1_mean": 1.0,
+      "exposed_f1_sd": 0.0,
+      "vuln_f1_mean": 1.0,
+      "vuln_f1_sd": 0.0,
+      "link_f1_mean": 1.0,
+      "link_f1_sd": 0.0,
+      "path_precision_at5_mean": 1.0,
+      "path_precision_at5_sd": 0.0,
+      "at_risk_precision": 1.0,
+      "at_risk_recall": 1.0
+    }
+  ],
+  "robustness": [
+    {
+      "variant": "clean",
+      "vuln_f1_mean": 0.49273434206251343,
+      "link_f1_mean": 0.5138605838605839,
+      "risk_reduction_mean": 0.0
+    },
+    {
+      "variant": "incomplete",
+      "vuln_f1_mean": 0.3683125329244423,
+      "link_f1_mean": 0.384124000999001,
+      "risk_reduction_mean": 0.0
+    },
+    {
+      "variant": "spurious",
+      "vuln_f1_mean": 0.4687111674099744,
+      "link_f1_mean": 0.46684263019402333,
+      "risk_reduction_mean": 0.0
+    },
+    {
+      "variant": "injection",
+      "vuln_f1_mean": 0.49273434206251343,
+      "link_f1_mean": 0.5138605838605839,
+      "risk_reduction_mean": 0.0
+    }
+  ],
+  "model_robustness": [
+    {
+      "variant": "clean",
+      "risk_reduction_mean": 0.9969431169674463,
+      "risk_reduction_sd": 0.01676772195739598,
+      "controls_mean": 2.05
+    },
+    {
+      "variant": "incomplete_25",
+      "risk_reduction_mean": 0.3262972711721111,
+      "risk_reduction_sd": 0.4163526467527273,
+      "controls_mean": 0.925
+    },
+    {
+      "variant": "incomplete_50",
+      "risk_reduction_mean": 0.029470441629066837,
+      "risk_reduction_sd": 0.1558776828960477,
+      "controls_mean": 0.1375
+    },
+    {
+      "variant": "contradictory",
+      "risk_reduction_mean": 0.992213191195459,
+      "risk_reduction_sd": 0.039761491163624214,
+      "controls_mean": 2.4625
+    },
+    {
+      "variant": "adversarial",
+      "risk_reduction_mean": 0.0,
+      "risk_reduction_sd": 0.0,
+      "controls_mean": 0
+    }
+  ]
+}
