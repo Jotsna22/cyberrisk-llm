@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from .defense import apply_plan, greedy_recommend
@@ -14,9 +15,23 @@ from .synthetic import TEMPLATES, generate_environment, render_report
 def _demo(args: argparse.Namespace) -> int:
     truth = generate_environment(args.template, args.seed)
     report = render_report(truth, args.seed)
-    model = RuleBasedExtractor().extract(report) if args.extractor == "rules" else truth
+    rejected = None
+    if args.extractor == "rules":
+        model = RuleBasedExtractor().extract(report)
+    elif args.extractor == "gemini":
+        from .extraction import GeminiExtractor
+
+        try:
+            extractor = GeminiExtractor(cache_dir=Path(args.cache_dir))
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        model = extractor.extract(report)
+        rejected = extractor.last_rejected
+    else:
+        model = truth
     print(f"Environment: {truth.name} ({len(truth.assets)} assets, {len(truth.links)} links)")
-    print(f"Extractor:   {args.extractor}")
+    print(f"Extractor:   {args.extractor}" + (f" ({rejected} facts rejected)" if rejected is not None else ""))
     print(f"Modeled risk before plan: {total_risk(truth):.4f}; at-risk critical assets: {sorted(at_risk_assets(truth))}")
     print("\nTop attack paths (ground truth):")
     for path in enumerate_attack_paths(truth)[:args.top]:
@@ -54,8 +69,11 @@ def main(argv: list[str] | None = None) -> int:
     demo = sub.add_parser("demo", help="run the pipeline on one synthetic environment")
     demo.add_argument("--template", choices=sorted(TEMPLATES), default="small_lab")
     demo.add_argument("--seed", type=int, default=0)
-    demo.add_argument("--extractor", choices=["rules", "oracle"], default="oracle",
-                      help="oracle: plan on ground truth; rules: plan on rule-based extraction of the report")
+    demo.add_argument("--extractor", choices=["rules", "oracle", "gemini"], default="oracle",
+                      help="oracle: plan on ground truth; rules: plan on rule-based extraction of the report; "
+                           "gemini: plan on LLM extraction (needs GEMINI_API_KEY unless cached)")
+    demo.add_argument("--cache-dir", default="results/llm_cache",
+                      help="response cache for --extractor gemini")
     demo.add_argument("--budget", type=float, default=4.0)
     demo.add_argument("--top", type=int, default=5)
     demo.set_defaults(func=_demo)

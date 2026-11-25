@@ -33,3 +33,11 @@ def test_cli_demo_runs(capsys):
     assert main(["demo", "--template", "cloud", "--seed", "1"]) == 0
     out = capsys.readouterr().out
     assert "Recommended plan" in out and "True modeled risk" in out
+
+
+def test_cli_demo_gemini_without_key_fails_cleanly(monkeypatch, capsys):
+    from cyberrisk.cli import main
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert main(["demo", "--extractor", "gemini"]) == 2
+    assert "GEMINI_API_KEY" in capsys.readouterr().err

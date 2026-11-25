@@ -41,6 +41,7 @@ Run the pipeline on one synthetic environment. By default the plan is made on th
 ```bash
 cyberrisk demo --template hpc --seed 3
 cyberrisk demo --template hpc --seed 3 --extractor rules   # plan on rule-based extraction of the report text
+GEMINI_API_KEY=... cyberrisk demo --template hpc --seed 3 --extractor gemini   # plan on Gemini extraction (cached in results/llm_cache/)
 ```
 
 Run the full evaluation (4 templates × 20 seeds = 80 environments, about 2 seconds):
