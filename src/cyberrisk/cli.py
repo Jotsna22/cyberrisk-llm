@@ -7,17 +7,28 @@ import sys
 from pathlib import Path
 
 from .defense import apply_plan, greedy_recommend
-from .extraction import ExtractionError, RuleBasedExtractor
+from .extraction import ExtractionError, RuleBasedExtractor, TemplateExtractor
 from .graph import at_risk_assets, enumerate_attack_paths, model_warnings, total_risk
+from .simulation import simulate_attacks
+from .hard_reports import render_hard_report, trap_outcome
 from .synthetic import TEMPLATES, generate_environment, render_report
 
 
 def _demo(args: argparse.Namespace) -> int:
     truth = generate_environment(args.template, args.seed)
-    report = render_report(truth, args.seed)
+    traps = []
+    if args.report == "easy":
+        report = render_report(truth, args.seed)
+    else:
+        hard = render_hard_report(truth, args.seed, injected=args.report == "hard_injected")
+        report, traps = hard.text, hard.traps
+    if args.show_report:
+        print(report)
     rejected = None
     if args.extractor == "rules":
         model = RuleBasedExtractor().extract(report)
+    elif args.extractor == "template":
+        model = TemplateExtractor().extract(report)
     elif args.extractor == "gemini":
         from .extraction import GeminiExtractor
 
@@ -31,7 +42,12 @@ def _demo(args: argparse.Namespace) -> int:
     else:
         model = truth
     print(f"Environment: {truth.name} ({len(truth.assets)} assets, {len(truth.links)} links)")
+    print(f"Report:      {args.report}")
     print(f"Extractor:   {args.extractor}" + (f" ({rejected} facts rejected)" if rejected is not None else ""))
+    if traps and args.extractor != "oracle":
+        print("Traps in the report:")
+        for trap in traps:
+            print(f"  {trap.kind:<27} {trap.asset:<10} {trap.detail:<18} -> {trap_outcome(model, trap)}")
     for warning in model_warnings(model):
         print(f"WARNING (planner input): {warning}")
     print(f"Modeled risk before plan: {total_risk(truth):.4f}; at-risk critical assets: {sorted(at_risk_assets(truth))}")
@@ -47,6 +63,12 @@ def _demo(args: argparse.Namespace) -> int:
     after = apply_plan(truth, plan)
     before = total_risk(truth)
     print(f"\nTrue modeled risk: {before:.4f} -> {total_risk(after):.4f}")
+    sim_before, sim_after = simulate_attacks(truth), simulate_attacks(after)
+    print(f"\nAttacker simulation on the true environment ({sim_before.method}):")
+    print(f"  attack success (any critical asset):  {sim_before.attack_success:.3f} -> {sim_after.attack_success:.3f}")
+    print(f"  critical assets compromised (mean):   {sim_before.critical_compromised:.3f} -> "
+          f"{sim_after.critical_compromised:.3f} of {len(truth.critical_assets())}")
+    print(f"  expected loss:                        {sim_before.expected_loss:.4f} -> {sim_after.expected_loss:.4f}")
     return 0
 
 
@@ -60,15 +82,34 @@ def _evaluate(args: argparse.Namespace) -> int:
         llm = GeminiExtractor(cache_dir=Path(args.out) / "llm_cache")
     try:
         result = run(Path(args.out), seeds=args.seeds, llm_extractor=llm,
-                     llm_robustness_seeds=args.llm_robustness_seeds)
+                     llm_robustness_seeds=args.llm_robustness_seeds, hard_llm_seeds=args.hard_llm_seeds)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     for row in result["summary"]:
-        print(f"{row['config']:<28} risk reduction {row['risk_reduction_mean']:.3f} ± {row['risk_reduction_sd']:.3f}")
+        lo, hi = row["loss_reduction_ci95"]
+        print(f"{row['config']:<28} risk reduction {row['risk_reduction_mean']:.3f} ± {row['risk_reduction_sd']:.3f}"
+              f"   attack success {row['attack_success_before_mean']:.3f} -> {row['attack_success_after_mean']:.3f}"
+              f"   loss reduction {row['loss_reduction_mean']:.3f} [{lo:.3f}, {hi:.3f}]")
     print("\nBudget sweep (risk reduction):")
     for row in result["budget_sweep"]:
-        print(f"  budget {row['budget']:g}  {row['config']:<28} {row['risk_reduction_mean']:.3f}")
+        print(f"  budget {row['budget']:g}  {row['config']:<28} {row['risk_reduction_mean']:.3f}"
+              f"   loss reduction {row['loss_reduction_mean']:.3f}")
+    print("\nHard reports (vuln F1 / link F1 / criticality acc. / risk reduction):")
+    for row in result["hard_text"]:
+        crit = row["criticality_acc_mean"]
+        print(f"  {row['variant']:<14} {row['extractor']:<16} {row['vuln_f1_mean']:.3f} / {row['link_f1_mean']:.3f} / "
+              f"{'n/a' if crit is None else f'{crit:.3f}'} / {row['risk_reduction_mean']:.3f}")
+    print("\nTraps fooled (when tested):")
+    for row in result["hard_text_traps"]:
+        if row["extractor"] == "llm" or row["fooled"]:
+            rate = row["fooled_rate_when_tested"]
+            print(f"  {row['variant']:<14} {row['extractor']:<16} {row['kind']:<27} "
+                  f"{'untested' if rate is None else f'{rate:.2f}'} ({row['fooled']}/{row['n'] - row['missing']})")
+    print("\nPaired tests (A - B, 95% stratified bootstrap CI, Wilcoxon p):")
+    for row in result["significance"]:
+        print(f"  {row['setting']:<9} {row['metric']:<15} {row['a']} - {row['b']}: {row['mean_diff']:+.3f} "
+              f"[{row['diff_ci95_low']:+.3f}, {row['diff_ci95_high']:+.3f}]  p={row['wilcoxon_p']:.2g}")
     return 0
 
 
@@ -79,8 +120,13 @@ def main(argv: list[str] | None = None) -> int:
     demo = sub.add_parser("demo", help="run the pipeline on one synthetic environment")
     demo.add_argument("--template", choices=sorted(TEMPLATES), default="small_lab")
     demo.add_argument("--seed", type=int, default=0)
-    demo.add_argument("--extractor", choices=["rules", "oracle", "gemini"], default="oracle",
+    demo.add_argument("--report", choices=["easy", "hard", "hard_injected"], default="easy",
+                      help="easy: templated report; hard: free-form text with tables, negations and corrections; "
+                           "hard_injected: hard plus planted injections")
+    demo.add_argument("--show-report", action="store_true", help="print the report text")
+    demo.add_argument("--extractor", choices=["rules", "template", "oracle", "gemini"], default="oracle",
                       help="oracle: plan on ground truth; rules: plan on rule-based extraction of the report; "
+                           "template: parser for all 12 easy-report phrasings; "
                            "gemini: plan on LLM extraction (needs GEMINI_API_KEY unless cached)")
     demo.add_argument("--cache-dir", default="results/llm_cache",
                       help="response cache for --extractor gemini")
@@ -95,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="add the LLM-extraction configuration (gemini needs GEMINI_API_KEY unless cached)")
     ev.add_argument("--llm-robustness-seeds", type=int, default=5,
                     help="seeds per template for the LLM text-robustness run (0 to skip)")
+    ev.add_argument("--hard-llm-seeds", type=int, default=20,
+                    help="seeds per template for the LLM on hard reports (0 to skip; rules/template always run)")
     ev.set_defaults(func=_evaluate)
 
     args = parser.parse_args(argv)

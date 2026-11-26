@@ -4,6 +4,8 @@ Two extractors produce an Environment from analyst text:
 
 * RuleBasedExtractor - regular expressions over the canonical phrasings
   only. No model, no network. Serves as the "graph without LLM" baseline.
+* TemplateExtractor - regular expressions for all twelve phrasings of the easy
+  reports: the strongest hand-written parser for that format.
 * LLMExtractor - asks a language model for structured JSON and validates
   it. Requires the optional `anthropic` package and ANTHROPIC_API_KEY. It
   is covered by unit tests with a stub client but was not run against a
@@ -66,6 +68,69 @@ class RuleBasedExtractor:
                     Vulnerability(m["cve"], float(m["cvss"]), m["av"], m["priv"])
                 )
             elif m := LINK_RE.match(line):
+                env.add_link(m["src"], m["dst"])
+        return env
+
+
+_AV_FROM_PHRASE = {"over the network": "network", "from the same network segment": "adjacent",
+                   "only with local access": "local"}
+_PRIV_FROM_PHRASE = {"no credentials": "none", "a low-privilege account": "low", "administrative privileges": "high"}
+_CRIT = r"(?P<crit>low|medium|high)"
+TEMPLATE_ASSET_RES = [
+    ASSET_RE,
+    re.compile(rf"^(?P<name>\S+) \((?P<kind>\S+)\) is rated {_CRIT} criticality for the research mission\.$"),
+    re.compile(rf"^The (?P<kind>\S+) (?P<name>\S+) carries {_CRIT} business criticality in the inventory\.$"),
+]
+TEMPLATE_EXPOSED_RES = [
+    EXPOSED_RE,
+    re.compile(r"^(?P<name>\S+) accepts connections from the public internet\.$"),
+    re.compile(r"^Public internet clients can open sessions to (?P<name>\S+)\.$"),
+]
+TEMPLATE_VULN_PHRASE_RES = [
+    re.compile(r"^(?P<cve>SYN-CVE-\d{4}) affects (?P<name>\S+) with a CVSS score of (?P<cvss>\d+\.\d); "
+               r"it is exploitable (?P<av>.+?) and needs (?P<priv>.+?)\.$"),
+    re.compile(r"^Scanner finding on (?P<name>\S+): (?P<cve>SYN-CVE-\d{4}), scored (?P<cvss>\d+\.\d), "
+               r"exploitable (?P<av>.+?), needing (?P<priv>.+?)\.$"),
+]
+TEMPLATE_LINK_RES = [
+    LINK_RE,
+    re.compile(r"^Firewall rules allow (?P<src>\S+) to connect to (?P<dst>\S+)\.$"),
+    re.compile(r"^Traffic from (?P<src>\S+) to (?P<dst>\S+) is permitted\.$"),
+]
+
+
+class TemplateExtractor:
+    """A parser for every phrasing the easy report generator uses (all 12 sentence patterns).
+
+    This is the strongest no-LLM baseline for the easy reports: a hand-written parser
+    tuned to the exact format. It is deliberately not tuned to the hard reports, so
+    comparing it with the LLM there shows whether the LLM generalizes beyond a format
+    a parser was written for.
+    """
+
+    def extract(self, text: str) -> Environment:
+        env = Environment(name="template-parser")
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            if m := next((r.match(line) for r in TEMPLATE_ASSET_RES if r.match(line)), None):
+                asset = _ensure_asset(env, m["name"])
+                asset.kind = m["kind"]
+                asset.criticality = m["crit"]
+            elif m := next((r.match(line) for r in TEMPLATE_EXPOSED_RES if r.match(line)), None):
+                _ensure_asset(env, m["name"]).internet_exposed = True
+            elif m := VULN_RE.match(line):
+                _ensure_asset(env, m["name"]).add_vulnerability(
+                    Vulnerability(m["cve"], float(m["cvss"]), m["av"], m["priv"])
+                )
+            elif m := next((r.match(line) for r in TEMPLATE_VULN_PHRASE_RES if r.match(line)), None):
+                av, priv = _AV_FROM_PHRASE.get(m["av"]), _PRIV_FROM_PHRASE.get(m["priv"])
+                if av and priv:
+                    _ensure_asset(env, m["name"]).add_vulnerability(
+                        Vulnerability(m["cve"], float(m["cvss"]), av, priv)
+                    )
+            elif m := next((r.match(line) for r in TEMPLATE_LINK_RES if r.match(line)), None):
                 env.add_link(m["src"], m["dst"])
         return env
 

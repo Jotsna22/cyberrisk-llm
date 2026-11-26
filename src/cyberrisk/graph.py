@@ -15,7 +15,10 @@ import networkx as nx
 
 from .models import INTERNET, Environment
 
-MAX_PATH_EDGES = 4  # longest attack path considered, in hops
+MAX_PATH_EDGES: int | None = None  # longest attack path considered, in hops; None = no limit.
+# The environments have at most 8 assets, so enumerating every simple path is cheap. An
+# earlier cap of 4 hops silently dropped critical assets 5 hops from the Internet
+# (VAULT-01 in cloud, RES-DATA in distributed) from every risk score.
 AT_RISK_PROBABILITY = 0.1  # a critical asset is "at risk" if a path reaches it with p >= this
 
 
@@ -63,7 +66,7 @@ def build_attack_graph(env: Environment) -> nx.DiGraph:
 
 
 def enumerate_attack_paths(
-    env: Environment, graph: nx.DiGraph | None = None, max_edges: int = MAX_PATH_EDGES
+    env: Environment, graph: nx.DiGraph | None = None, max_edges: int | None = MAX_PATH_EDGES
 ) -> list[AttackPath]:
     """All simple Internet-to-critical-asset paths, highest risk first."""
     graph = graph if graph is not None else build_attack_graph(env)

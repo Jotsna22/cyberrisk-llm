@@ -59,3 +59,25 @@ def test_model_warnings_flag_silent_failure_modes():
     ghost = chain_env()
     ghost.add_link("WEB", "GHOST")
     assert any("GHOST" in w for w in model_warnings(ghost))
+
+
+def test_five_hop_paths_are_scored():
+    """Regression: a 4-hop cap used to drop targets 5 hops from the Internet entirely."""
+    env = Environment("long-chain")
+    hops = ["H1", "H2", "H3", "H4", "TARGET"]
+    for i, name in enumerate(hops):
+        env.add_asset(Asset(name, "host", "high" if name == "TARGET" else "low", internet_exposed=(i == 0)))
+        env.assets[name].add_vulnerability(Vulnerability(f"V{i}", 9.8, "network", "none"))
+    for src, dst in zip(hops, hops[1:]):
+        env.add_link(src, dst)
+    paths = enumerate_attack_paths(env)
+    assert [p.nodes for p in paths] == [(INTERNET, *hops)]
+    assert total_risk(env) > 0
+
+
+def test_every_critical_asset_is_a_scored_target_in_every_template():
+    from cyberrisk.synthetic import TEMPLATES, generate_environment
+
+    for template in TEMPLATES:
+        targets = {p.target for seed in range(20) for p in enumerate_attack_paths(generate_environment(template, seed))}
+        assert set(generate_environment(template, 0).critical_assets()) <= targets, template
