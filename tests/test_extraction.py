@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cyberrisk.extraction import LLMExtractor, RuleBasedExtractor, environment_from_json
+from cyberrisk.extraction import ExtractionError, LLMExtractor, RuleBasedExtractor, environment_from_json
 from cyberrisk.synthetic import generate_environment, render_report
 from cyberrisk.metrics import extraction_scores
 
@@ -64,3 +64,23 @@ def test_llm_extractor_uses_stub_client():
     call = stub.messages.calls[0]
     assert call["model"] == "test-model"
     assert call["messages"][0] == {"role": "user", "content": "some report"}  # report is passed as user data
+
+
+@pytest.mark.parametrize("raw", ["not json at all", "[]", '"a string"'])
+def test_environment_from_json_rejects_non_objects_with_a_clear_error(raw):
+    with pytest.raises(ExtractionError):
+        environment_from_json(raw)
+
+
+def test_environment_from_json_skips_nameless_assets_and_null_lists():
+    env, rejected = environment_from_json(
+        '{"assets": [{"kind": "web"}, {"name": "B", "vulnerabilities": null}], "links": null}')
+    assert set(env.assets) == {"B"}
+    assert rejected == 1
+
+
+def test_links_with_null_endpoints_are_rejected_not_turned_into_assets():
+    # Seen in a live Gemini response (small_lab seed 15): a link endpoint came back as null.
+    env, rejected = environment_from_json('{"assets": [{"name": "A"}], "links": [["A", null], ["A", ""], ["A", "B"]]}')
+    assert env.links == {("A", "B")}
+    assert rejected == 2

@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 
 from .defense import apply_plan, greedy_recommend
-from .extraction import RuleBasedExtractor
-from .graph import at_risk_assets, enumerate_attack_paths, total_risk
+from .extraction import ExtractionError, RuleBasedExtractor
+from .graph import at_risk_assets, enumerate_attack_paths, model_warnings, total_risk
 from .synthetic import TEMPLATES, generate_environment, render_report
 
 
@@ -23,15 +23,17 @@ def _demo(args: argparse.Namespace) -> int:
 
         try:
             extractor = GeminiExtractor(cache_dir=Path(args.cache_dir))
-        except RuntimeError as exc:
+            model = extractor.extract(report)
+        except (RuntimeError, ExtractionError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        model = extractor.extract(report)
         rejected = extractor.last_rejected
     else:
         model = truth
     print(f"Environment: {truth.name} ({len(truth.assets)} assets, {len(truth.links)} links)")
     print(f"Extractor:   {args.extractor}" + (f" ({rejected} facts rejected)" if rejected is not None else ""))
+    for warning in model_warnings(model):
+        print(f"WARNING (planner input): {warning}")
     print(f"Modeled risk before plan: {total_risk(truth):.4f}; at-risk critical assets: {sorted(at_risk_assets(truth))}")
     print("\nTop attack paths (ground truth):")
     for path in enumerate_attack_paths(truth)[:args.top]:
@@ -56,9 +58,17 @@ def _evaluate(args: argparse.Namespace) -> int:
         from .extraction import GeminiExtractor
 
         llm = GeminiExtractor(cache_dir=Path(args.out) / "llm_cache")
-    result = run(Path(args.out), seeds=args.seeds, llm_extractor=llm)
+    try:
+        result = run(Path(args.out), seeds=args.seeds, llm_extractor=llm,
+                     llm_robustness_seeds=args.llm_robustness_seeds)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     for row in result["summary"]:
         print(f"{row['config']:<28} risk reduction {row['risk_reduction_mean']:.3f} ± {row['risk_reduction_sd']:.3f}")
+    print("\nBudget sweep (risk reduction):")
+    for row in result["budget_sweep"]:
+        print(f"  budget {row['budget']:g}  {row['config']:<28} {row['risk_reduction_mean']:.3f}")
     return 0
 
 
@@ -82,7 +92,9 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--seeds", type=int, default=20)
     ev.add_argument("--out", default="results")
     ev.add_argument("--llm", choices=["none", "gemini"], default="none",
-                    help="add the LLM-extraction configuration (gemini needs GEMINI_API_KEY)")
+                    help="add the LLM-extraction configuration (gemini needs GEMINI_API_KEY unless cached)")
+    ev.add_argument("--llm-robustness-seeds", type=int, default=5,
+                    help="seeds per template for the LLM text-robustness run (0 to skip)")
     ev.set_defaults(func=_evaluate)
 
     args = parser.parse_args(argv)

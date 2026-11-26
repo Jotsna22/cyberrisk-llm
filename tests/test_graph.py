@@ -1,6 +1,6 @@
 import pytest
 
-from cyberrisk.graph import at_risk_assets, enumerate_attack_paths, total_risk
+from cyberrisk.graph import at_risk_assets, enumerate_attack_paths, model_warnings, total_risk
 from cyberrisk.models import INTERNET, Asset, Environment, Vulnerability
 
 
@@ -46,3 +46,16 @@ def test_unknown_link_endpoints_are_ignored():
     env.add_link("GHOST", "DB")
     env.add_link("WEB", "GHOST")
     assert total_risk(env) == pytest.approx(total_risk(chain_env()))
+
+
+def test_model_warnings_flag_silent_failure_modes():
+    assert model_warnings(chain_env()) == []
+    no_entry = chain_env()
+    no_entry.assets["WEB"].internet_exposed = False
+    assert any("internet-exposed" in w for w in model_warnings(no_entry))
+    downgraded = chain_env()
+    downgraded.assets["DB"].criticality = "low"
+    assert any("high-criticality" in w for w in model_warnings(downgraded))
+    ghost = chain_env()
+    ghost.add_link("WEB", "GHOST")
+    assert any("GHOST" in w for w in model_warnings(ghost))

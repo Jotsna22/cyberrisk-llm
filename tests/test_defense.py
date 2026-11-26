@@ -8,7 +8,7 @@ def test_greedy_plan_reduces_risk_and_respects_budget():
     env = generate_environment("cloud", 1)
     before = total_risk(env)
     plan = greedy_recommend(env, budget=4.0)
-    assert sum(c.cost for c in plan) <= 6.0
+    assert sum(c.cost for c in plan) <= 4.0
     if before > 0:
         assert total_risk(apply_plan(env, plan)) < before
 
@@ -35,9 +35,31 @@ def test_cli_demo_runs(capsys):
     assert "Recommended plan" in out and "True modeled risk" in out
 
 
-def test_cli_demo_gemini_without_key_fails_cleanly(monkeypatch, capsys):
+def test_cli_demo_gemini_without_key_fails_cleanly_on_cache_miss(monkeypatch, capsys, tmp_path):
     from cyberrisk.cli import main
 
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    assert main(["demo", "--extractor", "gemini"]) == 2
+    assert main(["demo", "--extractor", "gemini", "--cache-dir", str(tmp_path)]) == 2
     assert "GEMINI_API_KEY" in capsys.readouterr().err
+
+
+def test_cli_demo_gemini_reproduces_from_committed_cache_without_key(monkeypatch, capsys):
+    from pathlib import Path
+
+    from cyberrisk.cli import main
+
+    cache = Path(__file__).resolve().parents[1] / "results" / "llm_cache"
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr("cyberrisk.extraction._default_gemini_transport",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("network used")))
+    assert main(["demo", "--template", "hpc", "--seed", "3", "--extractor", "gemini",
+                 "--cache-dir", str(cache)]) == 0
+    assert "Recommended plan" in capsys.readouterr().out
+
+
+def test_budget_sweep_is_monotonic_for_the_graph_planner():
+    from cyberrisk.experiments import evaluate_budget_sweep
+
+    rows = [r for r in evaluate_budget_sweep("hpc", 1) if r["config"] == "graph_oracle_upper_bound"]
+    values = [r["risk_reduction"] for r in sorted(rows, key=lambda r: r["budget"])]
+    assert values == sorted(values)

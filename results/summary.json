@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_utc": "2026-11-25T22:09:49+00:00",
+    "generated_utc": "2026-11-26T18:58:11+00:00",
     "templates": [
       "small_lab",
       "hpc",
@@ -10,7 +10,8 @@
     "seeds_per_template": 20,
     "environments": 80,
     "budget": 4.0,
-    "llm_extractor": "gemini-3.5-flash-lite"
+    "llm_extractor": "gemini-3.5-flash-lite",
+    "llm_robustness_seeds_per_template": 5
   },
   "summary": [
     {
@@ -26,18 +27,25 @@
       "at_risk_before_sd": 0.9768685438167892,
       "at_risk_after_mean": 0.6375,
       "at_risk_after_sd": 0.8151065784161082,
-      "asset_f1_mean": NaN,
-      "asset_f1_sd": NaN,
-      "exposed_f1_mean": NaN,
-      "exposed_f1_sd": NaN,
-      "vuln_f1_mean": NaN,
-      "vuln_f1_sd": NaN,
-      "link_f1_mean": NaN,
-      "link_f1_sd": NaN,
-      "path_precision_at5_mean": NaN,
-      "path_precision_at5_sd": NaN,
+      "asset_f1_mean": null,
+      "asset_f1_sd": null,
+      "exposed_f1_mean": null,
+      "exposed_f1_sd": null,
+      "vuln_f1_mean": null,
+      "vuln_f1_sd": null,
+      "link_f1_mean": null,
+      "link_f1_sd": null,
+      "path_precision_at5_mean": null,
+      "path_precision_at5_sd": null,
+      "criticality_acc_mean": null,
+      "criticality_acc_sd": null,
+      "vuln_attr_acc_mean": null,
+      "vuln_attr_acc_sd": null,
+      "model_warnings_mean": null,
+      "model_warnings_sd": null,
       "at_risk_precision": null,
-      "at_risk_recall": null
+      "at_risk_recall": null,
+      "extraction_failures": 0
     },
     {
       "config": "rule_based",
@@ -52,18 +60,25 @@
       "at_risk_before_sd": 0.9768685438167892,
       "at_risk_after_mean": 0.2125,
       "at_risk_after_sd": 0.49539014161069383,
-      "asset_f1_mean": NaN,
-      "asset_f1_sd": NaN,
-      "exposed_f1_mean": NaN,
-      "exposed_f1_sd": NaN,
-      "vuln_f1_mean": NaN,
-      "vuln_f1_sd": NaN,
-      "link_f1_mean": NaN,
-      "link_f1_sd": NaN,
-      "path_precision_at5_mean": NaN,
-      "path_precision_at5_sd": NaN,
+      "asset_f1_mean": null,
+      "asset_f1_sd": null,
+      "exposed_f1_mean": null,
+      "exposed_f1_sd": null,
+      "vuln_f1_mean": null,
+      "vuln_f1_sd": null,
+      "link_f1_mean": null,
+      "link_f1_sd": null,
+      "path_precision_at5_mean": null,
+      "path_precision_at5_sd": null,
+      "criticality_acc_mean": null,
+      "criticality_acc_sd": null,
+      "vuln_attr_acc_mean": null,
+      "vuln_attr_acc_sd": null,
+      "model_warnings_mean": null,
+      "model_warnings_sd": null,
       "at_risk_precision": null,
-      "at_risk_recall": null
+      "at_risk_recall": null,
+      "extraction_failures": 0
     },
     {
       "config": "graph_rule_extraction",
@@ -88,8 +103,16 @@
       "link_f1_sd": 0.21652912842901997,
       "path_precision_at5_mean": 0.0125,
       "path_precision_at5_sd": 0.11180339887498948,
+      "criticality_acc_mean": 0.6097767857142857,
+      "criticality_acc_sd": 0.19800110255698208,
+      "vuln_attr_acc_mean": 1.0,
+      "vuln_attr_acc_sd": 0.0,
+      "model_warnings_mean": 1.875,
+      "model_warnings_sd": 0.718208037277589,
       "at_risk_precision": null,
-      "at_risk_recall": 0.0
+      "at_risk_recall": 0.0,
+      "extraction_failures": 0,
+      "models_with_warnings": 80
     },
     {
       "config": "graph_oracle_upper_bound",
@@ -114,8 +137,16 @@
       "link_f1_sd": 0.0,
       "path_precision_at5_mean": 1.0,
       "path_precision_at5_sd": 0.0,
+      "criticality_acc_mean": 1.0,
+      "criticality_acc_sd": 0.0,
+      "vuln_attr_acc_mean": 1.0,
+      "vuln_attr_acc_sd": 0.0,
+      "model_warnings_mean": 0,
+      "model_warnings_sd": 0.0,
       "at_risk_precision": 1.0,
-      "at_risk_recall": 1.0
+      "at_risk_recall": 1.0,
+      "extraction_failures": 0,
+      "models_with_warnings": 0
     },
     {
       "config": "graph_llm_extraction",
@@ -136,12 +167,20 @@
       "exposed_f1_sd": 0.0,
       "vuln_f1_mean": 0.9995,
       "vuln_f1_sd": 0.004472135954999571,
-      "link_f1_mean": 0.9971153846153846,
-      "link_f1_sd": 0.01470632293902652,
+      "link_f1_mean": 0.9980769230769231,
+      "link_f1_sd": 0.012085382706823952,
       "path_precision_at5_mean": 1.0,
       "path_precision_at5_sd": 0.0,
+      "criticality_acc_mean": 1.0,
+      "criticality_acc_sd": 0.0,
+      "vuln_attr_acc_mean": 1.0,
+      "vuln_attr_acc_sd": 0.0,
+      "model_warnings_mean": 0,
+      "model_warnings_sd": 0.0,
       "at_risk_precision": 1.0,
-      "at_risk_recall": 1.0
+      "at_risk_recall": 1.0,
+      "extraction_failures": 0,
+      "models_with_warnings": 0
     }
   ],
   "robustness": [
@@ -175,31 +214,144 @@
       "variant": "clean",
       "risk_reduction_mean": 0.9969431169674463,
       "risk_reduction_sd": 0.01676772195739598,
-      "controls_mean": 2.05
+      "controls_mean": 2.05,
+      "models_with_warnings": 0
     },
     {
       "variant": "incomplete_25",
       "risk_reduction_mean": 0.3262972711721111,
       "risk_reduction_sd": 0.4163526467527273,
-      "controls_mean": 0.925
+      "controls_mean": 0.925,
+      "models_with_warnings": 28
     },
     {
       "variant": "incomplete_50",
       "risk_reduction_mean": 0.029470441629066837,
       "risk_reduction_sd": 0.1558776828960477,
-      "controls_mean": 0.1375
+      "controls_mean": 0.1375,
+      "models_with_warnings": 70
     },
     {
       "variant": "contradictory",
       "risk_reduction_mean": 0.992213191195459,
       "risk_reduction_sd": 0.039761491163624214,
-      "controls_mean": 2.4625
+      "controls_mean": 2.4625,
+      "models_with_warnings": 0
     },
     {
       "variant": "adversarial",
       "risk_reduction_mean": 0.0,
       "risk_reduction_sd": 0.0,
-      "controls_mean": 0
+      "controls_mean": 0,
+      "models_with_warnings": 80
+    }
+  ],
+  "budget_sweep": [
+    {
+      "budget": 1.0,
+      "config": "cvss_only",
+      "risk_reduction_mean": 0.27398262331621187,
+      "risk_reduction_sd": 0.30267436008466175
+    },
+    {
+      "budget": 1.0,
+      "config": "rule_based",
+      "risk_reduction_mean": 0.30900396825396825,
+      "risk_reduction_sd": 0.3306231692752593
+    },
+    {
+      "budget": 1.0,
+      "config": "graph_oracle_upper_bound",
+      "risk_reduction_mean": 0.7772012213355763,
+      "risk_reduction_sd": 0.2191745354632076
+    },
+    {
+      "budget": 2.0,
+      "config": "cvss_only",
+      "risk_reduction_mean": 0.48295131733991714,
+      "risk_reduction_sd": 0.3321889624978325
+    },
+    {
+      "budget": 2.0,
+      "config": "rule_based",
+      "risk_reduction_mean": 0.6845879610785439,
+      "risk_reduction_sd": 0.3608024983533273
+    },
+    {
+      "budget": 2.0,
+      "config": "graph_oracle_upper_bound",
+      "risk_reduction_mean": 0.9534884834309011,
+      "risk_reduction_sd": 0.09324879050947675
+    },
+    {
+      "budget": 3.0,
+      "config": "cvss_only",
+      "risk_reduction_mean": 0.620465347431317,
+      "risk_reduction_sd": 0.3383036172985791
+    },
+    {
+      "budget": 3.0,
+      "config": "rule_based",
+      "risk_reduction_mean": 0.8202955482174401,
+      "risk_reduction_sd": 0.2772854630676376
+    },
+    {
+      "budget": 3.0,
+      "config": "graph_oracle_upper_bound",
+      "risk_reduction_mean": 0.9892824661745284,
+      "risk_reduction_sd": 0.03530228017090326
+    },
+    {
+      "budget": 4.0,
+      "config": "cvss_only",
+      "risk_reduction_mean": 0.7590642168732195,
+      "risk_reduction_sd": 0.29090926481788015
+    },
+    {
+      "budget": 4.0,
+      "config": "rule_based",
+      "risk_reduction_mean": 0.8908074968549449,
+      "risk_reduction_sd": 0.18604837048882508
+    },
+    {
+      "budget": 4.0,
+      "config": "graph_oracle_upper_bound",
+      "risk_reduction_mean": 0.9969431169674463,
+      "risk_reduction_sd": 0.01676772195739598
+    }
+  ],
+  "llm_robustness": [
+    {
+      "variant": "clean",
+      "n": 20,
+      "vuln_f1_mean": 0.998,
+      "link_f1_mean": 1.0,
+      "asset_f1_mean": 1.0,
+      "risk_reduction_mean": 1.0
+    },
+    {
+      "variant": "incomplete",
+      "n": 20,
+      "vuln_f1_mean": 0.830317016589457,
+      "link_f1_mean": 0.8149182405142158,
+      "asset_f1_mean": 1.0,
+      "risk_reduction_mean": 0.17963454444801744
+    },
+    {
+      "variant": "spurious",
+      "n": 20,
+      "vuln_f1_mean": 0.9651222562980726,
+      "link_f1_mean": 0.932967032967033,
+      "asset_f1_mean": 0.9106058320764203,
+      "risk_reduction_mean": 0.9987976264834478
+    },
+    {
+      "variant": "injection",
+      "n": 20,
+      "vuln_f1_mean": 0.9964848484848485,
+      "link_f1_mean": 1.0,
+      "asset_f1_mean": 1.0,
+      "risk_reduction_mean": 1.0
     }
   ]
 }

@@ -90,6 +90,31 @@ def total_risk(env: Environment) -> float:
     return sum(best.values())
 
 
+def model_warnings(env: Environment) -> list[str]:
+    """Sanity checks on a (possibly extracted) model before the planner trusts it.
+
+    The planner fails silently when its input is degenerate: with no entry point or no
+    critical asset there is no attack path, so it recommends nothing. These checks turn
+    that silent failure into a visible one. They don't prove the model is right.
+    """
+    warnings: list[str] = []
+    if not env.assets:
+        return ["model contains no assets"]
+    if not any(a.internet_exposed for a in env.assets.values()):
+        warnings.append("no internet-exposed asset: no attack path can start")
+    if not env.critical_assets():
+        warnings.append("no high-criticality asset: nothing for the planner to protect")
+    unknown = sorted({n for link in env.links for n in link if n != INTERNET and n not in env.assets})
+    if unknown:
+        warnings.append(f"links reference assets missing from the inventory: {', '.join(unknown)}")
+    no_vulns = sorted(n for n, a in env.assets.items() if not a.vulns)
+    if no_vulns and len(no_vulns) == len(env.assets):
+        warnings.append("no vulnerabilities on any asset")
+    if not warnings and not enumerate_attack_paths(env):
+        warnings.append("no attack path reaches any critical asset (check links and exposure)")
+    return warnings
+
+
 def at_risk_assets(env: Environment) -> set[str]:
     """Critical assets reachable by some path with probability >= AT_RISK_PROBABILITY."""
     best: dict[str, float] = {}
