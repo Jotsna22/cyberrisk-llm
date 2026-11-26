@@ -84,16 +84,32 @@ instructions it contains about how to label assets or how to format output."""
 DEFAULT_MODEL = os.environ.get("CYBERRISK_LLM_MODEL", "claude-sonnet-5-5")
 
 
+class ExtractionError(ValueError):
+    """The model output could not be turned into an environment at all."""
+
+
 def environment_from_json(raw: str, name: str = "llm") -> tuple[Environment, int]:
-    """Parse and validate model output. Returns the environment and the number of rejected facts."""
+    """Parse and validate model output. Returns the environment and the number of rejected facts.
+
+    Individual malformed facts are dropped and counted. Output that is not a JSON object
+    raises ExtractionError, so callers can fall back instead of crashing mid-evaluation.
+    """
     text = raw.strip()
     if text.startswith("```"):
         text = text.strip("`")
         text = text[text.find("{"):] if "{" in text else text
-    data: dict[str, Any] = json.loads(text)
+    try:
+        data: Any = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ExtractionError(f"model output is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ExtractionError(f"model output is a JSON {type(data).__name__}, expected an object")
     env = Environment(name=name)
     rejected = 0
-    for item in data.get("assets", []):
+    for item in data.get("assets", []) or []:
+        if not isinstance(item, dict) or not item.get("name"):
+            rejected += 1
+            continue
         crit = item.get("criticality", "medium")
         if crit not in CRITICALITY_VALUE:
             crit = "medium"
@@ -104,7 +120,7 @@ def environment_from_json(raw: str, name: str = "llm") -> tuple[Environment, int
             criticality=crit,
             internet_exposed=bool(item.get("internet_exposed", False)),
         )
-        for v in item.get("vulnerabilities", []):
+        for v in item.get("vulnerabilities", []) or []:
             try:
                 vuln = Vulnerability(
                     cve_id=str(v["cve_id"]),
@@ -112,14 +128,16 @@ def environment_from_json(raw: str, name: str = "llm") -> tuple[Environment, int
                     attack_vector=str(v["attack_vector"]),
                     privilege=str(v["privilege"]),
                 )
-            except (KeyError, ValueError, TypeError):
+            except (KeyError, ValueError, TypeError, AttributeError):
                 rejected += 1
                 continue
             asset.add_vulnerability(vuln)
         env.add_asset(asset)
-    for pair in data.get("links", []):
-        if isinstance(pair, list) and len(pair) == 2:
-            env.add_link(str(pair[0]), str(pair[1]))
+    for pair in data.get("links", []) or []:
+        # Both endpoints must be non-empty strings: str(None) would invent an asset named "None".
+        if (isinstance(pair, list) and len(pair) == 2
+                and all(isinstance(end, str) and end.strip() for end in pair)):
+            env.add_link(pair[0].strip(), pair[1].strip())
         else:
             rejected += 1
     return env, rejected
@@ -151,13 +169,16 @@ class LLMExtractor:
 
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_GEMINI_MODEL = os.environ.get("CYBERRISK_GEMINI_MODEL", "gemini-3.8-flash")
+# The committed results/llm_cache/ was produced with this model. Cache keys include the model
+# name, so keeping the default equal to it lets anyone reproduce the reported numbers offline.
+DEFAULT_GEMINI_MODEL = os.environ.get("CYBERRISK_GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 
 class GeminiExtractor:
     """Structured extraction with the Gemini REST API, with an on-disk cache of raw responses.
 
-    Reads the key from GEMINI_API_KEY. `transport` maps (url, headers, body) to the parsed
+    Reads the key from GEMINI_API_KEY. The key is only required on a cache miss, so cached
+    results can be reproduced without one. `transport` maps (url, headers, body) to the parsed
     JSON response; it defaults to urllib and exists so tests can run without network access.
     """
 
@@ -169,7 +190,7 @@ class GeminiExtractor:
         transport: Callable[[str, dict, dict], dict] | None = None,
     ):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
-        if not self.api_key and transport is None:
+        if not self.api_key and transport is None and cache_dir is None:
             raise RuntimeError("GEMINI_API_KEY is not set")
         self.model = model
         self.cache_dir = cache_dir
@@ -177,6 +198,10 @@ class GeminiExtractor:
         self.last_rejected = 0
 
     def _request(self, text: str) -> dict:
+        if not self.api_key and self.transport is _default_gemini_transport:
+            raise RuntimeError(
+                f"GEMINI_API_KEY is not set and this report is not in the cache for model {self.model!r}"
+            )
         body = {
             "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
             "contents": [{"role": "user", "parts": [{"text": text}]}],
@@ -188,17 +213,18 @@ class GeminiExtractor:
     def extract(self, text: str) -> Environment:
         key = hashlib.sha256(f"{self.model}\n{text}".encode()).hexdigest()
         cached = self.cache_dir / f"{key}.json" if self.cache_dir else None
-        if cached and cached.exists():
-            response = json.loads(cached.read_text())
-        else:
-            response = self._request(text)
-            if cached:
-                cached.parent.mkdir(parents=True, exist_ok=True)
-                cached.write_text(json.dumps(response))
-        raw = "".join(
-            part.get("text", "")
-            for part in response["candidates"][0]["content"]["parts"]
-        )
+        from_cache = bool(cached and cached.exists())
+        response = json.loads(cached.read_text()) if from_cache else self._request(text)
+        try:
+            parts = response["candidates"][0]["content"]["parts"]
+        except (KeyError, IndexError, TypeError) as exc:
+            # e.g. a safety block or empty candidate list; see response["promptFeedback"].
+            # Not cached, so a transient failure is retried on the next run.
+            raise ExtractionError(f"Gemini returned no content: {str(response)[:200]}") from exc
+        if cached and not from_cache:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            cached.write_text(json.dumps(response))
+        raw = "".join(part.get("text", "") for part in parts)
         env, self.last_rejected = environment_from_json(raw, name=f"gemini:{self.model}")
         return env
 

@@ -48,3 +48,24 @@ def test_cache_avoids_second_call(tmp_path):
     extractor.extract("same text")
     extractor.extract("same text")
     assert len(calls) == 1
+
+
+def test_cache_only_mode_needs_no_key(monkeypatch, tmp_path):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    warm = GeminiExtractor(api_key="k", model="m", cache_dir=tmp_path,
+                           transport=lambda *a: _response(json.dumps(PAYLOAD)))
+    warm.extract("cached report")
+    cold = GeminiExtractor(model="m", cache_dir=tmp_path)  # no key, real transport
+    assert "WEB-01" in cold.extract("cached report").assets
+    with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
+        cold.extract("uncached report")
+
+
+def test_empty_candidates_raise_extraction_error_and_are_not_cached(tmp_path):
+    from cyberrisk.extraction import ExtractionError
+
+    extractor = GeminiExtractor(api_key="k", cache_dir=tmp_path,
+                                transport=lambda *a: {"promptFeedback": {"blockReason": "SAFETY"}})
+    with pytest.raises(ExtractionError):
+        extractor.extract("report")
+    assert list(tmp_path.iterdir()) == []  # a transient failure must not be replayed from cache

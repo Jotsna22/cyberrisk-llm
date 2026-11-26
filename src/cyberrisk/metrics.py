@@ -29,14 +29,39 @@ def extraction_facts(env: Environment) -> dict[str, set]:
     }
 
 
-def extraction_scores(predicted: Environment, truth: Environment) -> dict[str, float]:
+def attribute_accuracy(predicted: Environment, truth: Environment) -> dict[str, float | None]:
+    """Accuracy of attribute values on facts both models contain.
+
+    Set F1 only checks that an asset or (asset, CVE) pair was found. It cannot see an
+    extractor that finds DB-01 but labels it low criticality, or records the wrong CVSS
+    or attack vector. Those errors change the risk score, so they are scored here.
+    None means no fact was shared, so accuracy is undefined.
+    """
+    shared_assets = [n for n in truth.assets if n in predicted.assets]
+    crit_ok = sum(predicted.assets[n].criticality == truth.assets[n].criticality for n in shared_assets)
+    shared_vulns = [
+        (n, cve) for n in shared_assets for cve in truth.assets[n].vulns if cve in predicted.assets[n].vulns
+    ]
+    vuln_ok = 0
+    for n, cve in shared_vulns:
+        pv, tv = predicted.assets[n].vulns[cve], truth.assets[n].vulns[cve]
+        vuln_ok += (abs(pv.cvss - tv.cvss) < 0.05 and pv.attack_vector == tv.attack_vector
+                    and pv.privilege == tv.privilege)
+    return {
+        "criticality_acc": crit_ok / len(shared_assets) if shared_assets else None,
+        "vuln_attr_acc": vuln_ok / len(shared_vulns) if shared_vulns else None,
+    }
+
+
+def extraction_scores(predicted: Environment, truth: Environment) -> dict[str, float | None]:
     p, t = extraction_facts(predicted), extraction_facts(truth)
-    out: dict[str, float] = {}
+    out: dict[str, float | None] = {}
     for key in ("assets", "exposed", "vulns", "links"):
         precision, recall, f1 = prf(p[key], t[key])
         out[f"{key}_precision"] = precision
         out[f"{key}_recall"] = recall
         out[f"{key}_f1"] = f1
+    out.update(attribute_accuracy(predicted, truth))
     return out
 
 

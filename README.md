@@ -18,7 +18,8 @@ text reports ──► extraction ──► Environment model ──► attack g
 | Greedy defense planner, CVSS-only and rule-based baselines | Implemented and tested |
 | Synthetic environments (4 topologies) and report generator | Implemented and tested |
 | Rule-based extractor (no LLM) | Implemented and tested |
-| LLM extractors (`GeminiExtractor`, `LLMExtractor`) | Implemented and tested with stub transports/clients. The committed results include a Gemini run (`gemini-3.5-flash-lite`, cached under `results/llm_cache/`); `gemini-3.8-flash` was overloaded (503) when it was attempted. |
+| LLM extractors (`GeminiExtractor`, `LLMExtractor`) | Implemented and tested with stub transports/clients. The committed results include a live Gemini run (`gemini-3.5-flash-lite`, the default model). Every response is cached under `results/llm_cache/`, so the LLM results reproduce offline without an API key. `LLMExtractor` (Anthropic) has not been run live. |
+| Planner-input sanity checks (`model_warnings`) | Implemented and tested. They flag degenerate extracted models (no entry point, no critical asset, dangling links) instead of letting the planner fail silently. |
 | Evaluation harness, robustness experiments | Implemented; results in `results/` |
 | NVD / MITRE ATT&CK ingestion | **Not implemented.** All CVE IDs are synthetic (`SYN-CVE-xxxx`). |
 
@@ -41,7 +42,7 @@ Run the pipeline on one synthetic environment. By default the plan is made on th
 ```bash
 cyberrisk demo --template hpc --seed 3
 cyberrisk demo --template hpc --seed 3 --extractor rules   # plan on rule-based extraction of the report text
-GEMINI_API_KEY=... cyberrisk demo --template hpc --seed 3 --extractor gemini   # plan on Gemini extraction (cached in results/llm_cache/)
+cyberrisk demo --template hpc --seed 3 --extractor gemini   # plan on Gemini extraction; served from results/llm_cache/, no key needed
 ```
 
 Run the full evaluation (4 templates × 20 seeds = 80 environments, about 2 seconds):
@@ -51,14 +52,20 @@ cyberrisk evaluate --seeds 20 --out results
 # or: python scripts/run_evaluation.py --seeds 20
 ```
 
-Run the LLM condition with Gemini (requires `GEMINI_API_KEY`; responses are cached under `results/llm_cache/`):
+Run the LLM condition with Gemini. With the committed cache this reproduces the reported numbers offline, with no key and no API calls. It also writes `results/llm_robustness.csv` (4 templates × 5 seeds, `--llm-robustness-seeds`):
 
 ```bash
-export GEMINI_API_KEY=...   # never commit this value
 cyberrisk evaluate --seeds 20 --llm gemini
 ```
 
-The model defaults to `gemini-3.8-flash` and can be changed with `CYBERRISK_GEMINI_MODEL`. An Anthropic-backed `LLMExtractor` is also included (requires `ANTHROPIC_API_KEY` and the `llm` extra).
+A key is needed only for reports that are not in the cache, for example with a different model or more seeds:
+
+```bash
+export GEMINI_API_KEY=...   # never commit this value
+CYBERRISK_GEMINI_MODEL=gemini-3.8-flash cyberrisk evaluate --seeds 20 --llm gemini
+```
+
+The model defaults to `gemini-3.5-flash-lite`, the model the cache was built with. Cache keys include the model name. An Anthropic-backed `LLMExtractor` is also included (requires `ANTHROPIC_API_KEY` and the `llm` extra).
 
 ## Tests
 
@@ -66,7 +73,7 @@ The model defaults to `gemini-3.8-flash` and can be changed with `CYBERRISK_GEMI
 pytest -q
 ```
 
-The suite has 22 tests covering the risk math, the extractors (including the stub-client LLM path), defense planning and budgets, deterministic generation, metrics, and the CLI.
+The suite has 37 tests. They cover the risk math, the extractors (including the stub-client LLM path and malformed model output), defense planning and budgets, the budget sweep, planner-input warnings, deterministic generation, metrics, the CLI, and offline reproduction from the committed cache.
 
 ## Method in brief
 
@@ -85,9 +92,25 @@ Risk reduction is measured on the ground-truth environment, so extraction errors
 | `rule_based` | 0.891 ± 0.186 | No topology; uses exposure flags |
 | `graph_rule_extraction` | 0.000 ± 0.000 | Extracted graph has no attack path (see below) |
 | `graph_oracle_upper_bound` | 0.997 ± 0.017 | Planner on perfect model (upper bound) |
-| `graph + LLM extraction` | not run | Run with `--llm gemini` (see Usage) |
+| `graph_llm_extraction` (Gemini) | 0.997 ± 0.017 | `gemini-3.5-flash-lite`, matches the oracle |
 
-Extraction quality for the rule-based extractor: asset F1 0.822, exposure F1 0.329, vulnerability F1 0.493, link F1 0.514. The rule-based extractor recognizes only the canonical phrasing, and about two thirds of facts are paraphrased in the test text, so recall is low by design.
+Extraction quality:
+
+| Extractor | Asset F1 | Exposure F1 | Vuln F1 | Link F1 | Criticality acc. | Vuln attribute acc. | Models flagged by sanity checks |
+|---|---|---|---|---|---|---|---|
+| Rule-based | 0.822 | 0.329 | 0.493 | 0.514 | 0.610 | 1.000 | 80 / 80 |
+| Gemini | 1.000 | 1.000 | 0.9995 | 0.998 | 1.000 | 1.000 | 0 / 80 |
+
+The rule-based extractor recognizes only the canonical phrasing, and about two thirds of facts are paraphrased in the test text, so recall is low by design. Its graph result of 0.000 comes from that: it misses most exposure lines, so the extracted graph has no entry point. The sanity checks flag all 80 of these models. *Attribute accuracy* scores the values on facts both models share (criticality; CVSS, attack vector and privilege). Set F1 cannot see a criticality downgrade, and attribute accuracy can.
+
+Budget sweep (`results/budget_sweep.csv`). The gap between topology-aware planning and the baselines is widest when the budget is tight:
+
+| Budget | `cvss_only` | `rule_based` | graph planner (oracle model) |
+|---|---|---|---|
+| 1 | 0.274 | 0.309 | 0.777 |
+| 2 | 0.483 | 0.685 | 0.953 |
+| 3 | 0.620 | 0.820 | 0.989 |
+| 4 | 0.759 | 0.891 | 0.997 |
 
 Model-level robustness (perturbing the planner's input model):
 
@@ -99,11 +122,22 @@ Model-level robustness (perturbing the planner's input model):
 | two invented links + one invented vuln | 0.992 | 2.46 |
 | critical assets relabeled low (adversarial) | 0.000 | 0 |
 
-Full tables: `results/summary.json`, `results/per_environment.csv`, `results/model_robustness.csv`.
+The sanity checks flag every adversarial model (80 / 80) and no clean model, so this failure is detected even though the planner cannot recover from it.
+
+LLM text-level robustness (4 templates × 5 seeds, `results/llm_robustness.csv`):
+
+| Report variant | Vuln F1 | Link F1 | Asset F1 | Risk reduction |
+|---|---|---|---|---|
+| clean | 0.998 | 1.000 | 1.000 | 1.000 |
+| 30% of structural lines removed | 0.830 | 0.815 | 1.000 | 0.180 |
+| three invented lines appended | 0.965 | 0.933 | 0.911 | 0.999 |
+| appended injection line | 0.996 | 1.000 | 1.000 | 1.000 |
+
+Full tables: `results/summary.json`, `results/per_environment.csv`, `results/model_robustness.csv`, `results/budget_sweep.csv`, `results/llm_robustness.csv`.
 
 ## Limitations
 
-* The LLM path, which is the central research claim, is evaluated in the committed results with `gemini-3.5-flash-lite` (one model, one run, synthetic reports). Re-run with `cyberrisk evaluate --llm gemini` to reproduce.
+* The LLM path, which is the central research claim, is evaluated with one model (`gemini-3.5-flash-lite`), one run, on templated synthetic reports. Each fact type has only three phrasings, so a regex set covering all twelve would also score near-perfect. The LLM result shows the model reads this format. It does not yet show an advantage over a well-written parser on real, free-form analyst text.
 * All data is synthetic, and the risk model is a simplified, hand-designed scoring model. The ground truth uses the same scoring model, so ranking accuracy shows pipeline fidelity, not real-world validity.
 * The `cvss_only` and `rule_based` baselines use the true vulnerability list and exposure flags (a scanner plus inventory). This is a favorable assumption for them.
 * The attack graph ignores privilege escalation across hops and lateral movement chains beyond `MAX_PATH_EDGES = 4`.

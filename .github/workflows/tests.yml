@@ -1,0 +1,25 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[test]"
+      - run: pytest -q
+      # Reproduce the reported numbers (including the Gemini run) from the committed cache.
+      # No API key is available here, so any cache miss fails the job.
+      - run: |
+          mkdir -p /tmp/repro && cp -r results/llm_cache /tmp/repro/llm_cache
+          cyberrisk evaluate --seeds 20 --llm gemini --out /tmp/repro
+          python -c "import json; a=json.load(open('results/summary.json'))['summary']; b=json.load(open('/tmp/repro/summary.json'))['summary']; assert [round(x['risk_reduction_mean'],9) for x in a]==[round(x['risk_reduction_mean'],9) for x in b], 'results drifted'"
