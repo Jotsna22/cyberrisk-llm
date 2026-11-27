@@ -12,6 +12,7 @@ from .graph import at_risk_assets, enumerate_attack_paths, model_warnings, total
 from .simulation import simulate_attacks
 from .attack_mapping import map_path
 from .hard_reports import render_hard_report, trap_outcome
+from .inventory import Inventory, reconcile
 from .nvd import real_catalog
 from .synthetic import TEMPLATES, generate_environment, render_report
 
@@ -55,6 +56,12 @@ def _demo(args: argparse.Namespace) -> int:
         print("Traps in the report:")
         for trap in traps:
             print(f"  {trap.kind:<27} {trap.asset:<10} {trap.detail:<18} -> {trap_outcome(model, trap)}")
+    if args.inventory:
+        found = reconcile(model, Inventory.from_environment(truth), correct=True)
+        print(f"Inventory check: {len(found.discrepancies)} label(s) overruled by the trusted inventory")
+        for item in found.discrepancies:
+            print(f"  - {item.describe()}")
+        model = found.model
     for warning in model_warnings(model):
         print(f"WARNING (planner input): {warning}")
     print(f"Modeled risk before plan: {total_risk(truth):.4f}; at-risk critical assets: {sorted(at_risk_assets(truth))}")
@@ -82,6 +89,27 @@ def _demo(args: argparse.Namespace) -> int:
     print(f"  critical assets compromised (mean):   {sim_before.critical_compromised:.3f} -> "
           f"{sim_after.critical_compromised:.3f} of {len(truth.critical_assets())}")
     print(f"  expected loss:                        {sim_before.expected_loss:.4f} -> {sim_after.expected_loss:.4f}")
+    return 0
+
+
+def _inventory_check(args: argparse.Namespace) -> int:
+    from .inventory_eval import run_inventory_check
+
+    try:
+        result = run_inventory_check(Path(args.out), Path(args.cache_dir), seeds=args.seeds)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print("Inventory check (Gemini on hard reports; risk reduction / attack success after plan):")
+    for row in result["summary"]:
+        if row["policy"] == "flag_only":
+            continue
+        fooled = sum(row[f"{k}_fooled"] or 0 for k in ("injection_instruction", "injection_unverified",
+                                                       "injection_plausible_update"))
+        print(f"  {row['variant']:<14} {row['setting']:<12} {row['policy']:<10} "
+              f"{row['risk_reduction_mean']:.3f} [{row['risk_reduction_ci95_low']:.3f}, "
+              f"{row['risk_reduction_ci95_high']:.3f}] / {row['attack_success_after_mean']:.3f}"
+              f"   injections fooled: {fooled}")
     return 0
 
 
@@ -160,9 +188,20 @@ def main(argv: list[str] | None = None) -> int:
                            "(oracle extractor only)")
     demo.add_argument("--attack", action="store_true",
                       help="label each step of the top attack paths with its MITRE ATT&CK technique")
+    demo.add_argument("--inventory", action="store_true",
+                      help="let a trusted inventory (built from the ground truth) overrule the extracted "
+                           "exposure and criticality labels before planning")
     demo.add_argument("--budget", type=float, default=4.0)
     demo.add_argument("--top", type=int, default=5)
     demo.set_defaults(func=_demo)
+
+    inv = sub.add_parser("inventory-check",
+                         help="measure how much a trusted asset inventory repairs plans broken by planted text")
+    inv.add_argument("--seeds", type=int, default=20)
+    inv.add_argument("--out", default="results")
+    inv.add_argument("--cache-dir", default="results/llm_cache",
+                     help="Gemini response cache (reports not in it need GEMINI_API_KEY)")
+    inv.set_defaults(func=_inventory_check)
 
     rc = sub.add_parser("real-cve", help="evaluate the planner and baselines on environments built from real CVEs")
     rc.add_argument("--seeds", type=int, default=20)
