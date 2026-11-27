@@ -25,9 +25,11 @@ text reports ──► extraction ──► Environment model ──► attack g
 | Attacker simulation (`simulation.py`) | Implemented and tested. Attack success rate, critical assets compromised and expected loss, before and after each plan, on the ground truth. Exact for every environment here; Monte Carlo for larger graphs. |
 | Significance tests and confidence intervals (`stats.py`) | Implemented and tested. Stratified paired bootstrap 95% CIs, Wilcoxon signed-rank and sign tests (pure Python; checked against SciPy). |
 | Evaluation harness, robustness experiments | Implemented; results in `results/` |
-| NVD / MITRE ATT&CK ingestion | **Not implemented.** All CVE IDs are synthetic (`SYN-CVE-xxxx`). |
+| NVD import (`nvd.py`) | Implemented and tested. Reads the NVD CVE API 2.0 JSON layout (CVSS v3.x base score, attack vector, privileges required). A sample of 21 well-known real CVEs, refreshed from the live NVD on 2026-11-27, is bundled in `src/cyberrisk/data/nvd_sample.json`. `scripts/verify_nvd.py` rechecks it against the live NVD (see below). |
+| MITRE ATT&CK mapping (`attack_mapping.py`) | Implemented and tested. A coarse rule-based mapping of each attack step to one of three techniques (T1190, T1210, T1068). |
+| Real-CVE evaluation (`real_cve_eval.py`) | Implemented and tested. Planner and non-extraction baselines on the same 80 environments with real CVEs. The text extractors and the Gemini cache still use synthetic IDs only. |
 
-All assets, CVE identifiers, and scores are fictional. The synthetic CVE IDs deliberately do not match real NVD entries.
+The assets and topologies are fictional. By default the CVE identifiers and scores are fictional too (`SYN-CVE-xxxx`, deliberately not real NVD entries). With `--catalog real` the weaknesses are drawn from real CVEs, but they are still assigned to fictional assets at random.
 
 ## Install
 
@@ -48,6 +50,15 @@ cyberrisk demo --template hpc --seed 3
 cyberrisk demo --template hpc --seed 3 --extractor rules   # plan on rule-based extraction of the report text
 cyberrisk demo --template hpc --seed 3 --extractor gemini   # plan on Gemini extraction; served from results/llm_cache/, no key needed
 cyberrisk demo --template small_lab --seed 3 --report hard_injected --extractor gemini --show-report   # hard report with injections, trap outcomes
+```
+
+Real CVEs and MITRE ATT&CK labels (oracle extractor only):
+
+```bash
+cyberrisk demo --template hpc --seed 3 --catalog real --attack   # each attack step labeled with its ATT&CK technique
+cyberrisk real-cve --seeds 20 --out results                      # baselines vs. planner on real CVEs
+python scripts/verify_nvd.py                                     # needs internet: compare the bundled sample with the live NVD
+python scripts/verify_nvd.py --refresh                           # overwrite the sample with live NVD data
 ```
 
 Run the full evaluation (4 templates × 20 seeds = 80 environments, under a minute):
@@ -143,6 +154,18 @@ Budget sweep (`results/budget_sweep.csv`). The gap between topology-aware planni
 
 The greedy planner is not optimal. At budget 2, `rule_based` beats it in 13 of 80 environments. In 12 of them the entry host has two equally exploitable vulnerabilities. Patching either one alone removes no risk, because the edge keeps the other one's probability, so greedy, which picks one control at a time, never chooses it. Patching both closes the entry point, and `rule_based` happens to do exactly that (e.g. `small_lab` seed 8, `hpc` seeds 0 and 2). A planner that considers pairs of controls, or an exact search, would fix this.
 
+### Real CVEs (`results/real_cve_summary.csv`)
+
+The same 80 environments, budget 4, with weaknesses drawn from 21 real CVEs (Log4Shell, EternalBlue, Heartbleed and others) instead of the synthetic catalog. Only configurations that need no text extraction are run.
+
+| Configuration | Risk reduction (mean ± sd) | Attack success, before → after |
+|---|---|---|
+| `cvss_only` | 0.628 ± 0.349 | 0.675 → 0.330 |
+| `rule_based` | 0.924 ± 0.201 | 0.675 → 0.043 |
+| `graph_oracle_upper_bound` | 0.976 ± 0.095 | 0.675 → 0.054 |
+
+The ordering matches the synthetic results (graph planner > rule-based > CVSS-only on risk reduction). The graph planner's attack-success-after is not lower than the rule-based baseline's here (0.054 vs. 0.043), so on that measure the two are about equal. This is a single evaluation on one small CVE sample, with no significance tests.
+
 Model-level robustness (perturbing the planner's input model):
 
 | Variant | Risk reduction | Controls |
@@ -218,6 +241,10 @@ Full tables: `results/summary.json`, `results/per_environment.csv`, `results/mod
 
 ## Limitations
 
+* The real-CVE sample is small (21 CVEs, mostly network-exploitable and high severity) and was first typed in by hand and then refreshed from the live NVD with `python scripts/verify_nvd.py --refresh`; the hand-entered version had 4 wrong scores out of 21. NVD rescores CVEs over time, so rerun `python scripts/verify_nvd.py` to check for changes (and rerun `cyberrisk real-cve` if any). The CVSS fields come from NVD, but the CVEs are placed on fictional assets, so this shows the pipeline works on real vulnerability data, not that the networks are realistic.
+* The ATT&CK mapping uses one technique per kind of step (position plus attack vector). It is a labeling aid, not a validated mapping of real attacker behavior.
+* The text extractors (`RuleBasedExtractor`, `TemplateExtractor`) and the cached Gemini responses only understand `SYN-CVE-xxxx` IDs, so `--catalog real` works with the oracle extractor only.
+
 * The LLM is evaluated with one model (`gemini-3.5-flash-lite`) and one run. On the easy reports, a parser for their twelve phrasings matches it exactly. The hard reports show the LLM generalizing to formats the parser was not written for, but they are still generated text: the phrase pool is larger, but finite, and a parser could be written for it too. They are not real analyst reports.
 * The injection results are for a single model with the default extraction prompt. No prompt-level defenses were tried. The prompt is not part of the cache key, so changing the prompt requires a fresh cache.
 * All data is synthetic, and the risk model is a simplified, hand-designed scoring model. The ground truth uses the same scoring model, so ranking accuracy shows pipeline fidelity, not real-world validity.
@@ -230,10 +257,11 @@ Full tables: `results/summary.json`, `results/per_environment.csv`, `results/mod
 ## Repository layout
 
 ```
-src/cyberrisk/   models.py  graph.py  defense.py  baselines.py  synthetic.py
+src/cyberrisk/   models.py  graph.py  defense.py  baselines.py  synthetic.py  nvd.py  attack_mapping.py  real_cve_eval.py
+                 data/nvd_sample.json
                  hard_reports.py  extraction.py  metrics.py  simulation.py  stats.py  experiments.py  cli.py
 tests/           unit tests (pytest)
-scripts/         run_evaluation.py
+scripts/         run_evaluation.py  verify_nvd.py
 results/         generated CSV/JSON evaluation outputs
 results_superseded/   earlier run, kept for transparency
 report/          final project report (LaTeX)

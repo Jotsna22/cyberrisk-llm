@@ -10,12 +10,19 @@ from .defense import apply_plan, greedy_recommend
 from .extraction import ExtractionError, RuleBasedExtractor, TemplateExtractor
 from .graph import at_risk_assets, enumerate_attack_paths, model_warnings, total_risk
 from .simulation import simulate_attacks
+from .attack_mapping import map_path
 from .hard_reports import render_hard_report, trap_outcome
+from .nvd import real_catalog
 from .synthetic import TEMPLATES, generate_environment, render_report
 
 
 def _demo(args: argparse.Namespace) -> int:
-    truth = generate_environment(args.template, args.seed)
+    if args.catalog == "real" and args.extractor != "oracle":
+        print("error: --catalog real works with --extractor oracle only (the extractors and the cached "
+              "Gemini responses were built for synthetic SYN-CVE ids)", file=sys.stderr)
+        return 2
+    catalog = real_catalog() if args.catalog == "real" else None
+    truth = generate_environment(args.template, args.seed, catalog=catalog)
     traps = []
     if args.report == "easy":
         report = render_report(truth, args.seed)
@@ -54,6 +61,12 @@ def _demo(args: argparse.Namespace) -> int:
     print("\nTop attack paths (ground truth):")
     for path in enumerate_attack_paths(truth)[:args.top]:
         print(f"  {' -> '.join(path.nodes)}  p={path.probability:.3f}  risk={path.risk:.4f}")
+        if args.attack:
+            for step in map_path(truth, path.nodes):
+                if step.technique is not None and step.vulnerability is not None:
+                    print(f"      {step.src} -> {step.dst}: {step.technique.label()} "
+                          f"[{step.technique.tactic}] via {step.vulnerability.cve_id} "
+                          f"(CVSS {step.vulnerability.cvss:.1f})")
     plan = greedy_recommend(model, args.budget)
     print(f"\nRecommended plan (budget {args.budget}):")
     if not plan:
@@ -69,6 +82,18 @@ def _demo(args: argparse.Namespace) -> int:
     print(f"  critical assets compromised (mean):   {sim_before.critical_compromised:.3f} -> "
           f"{sim_after.critical_compromised:.3f} of {len(truth.critical_assets())}")
     print(f"  expected loss:                        {sim_before.expected_loss:.4f} -> {sim_after.expected_loss:.4f}")
+    return 0
+
+
+def _real_cve(args: argparse.Namespace) -> int:
+    from .real_cve_eval import run_real_cve
+
+    summary = run_real_cve(Path(args.out), seeds=args.seeds)
+    print(f"Real-CVE evaluation ({summary[0]['catalog_size']} CVEs, {summary[0]['n']} environments, budget 4):")
+    for row in summary:
+        print(f"{row['config']:<28} risk reduction {row['risk_reduction_mean']:.3f} ± {row['risk_reduction_sd']:.3f}"
+              f"   attack success {row['attack_success_before']:.3f} -> {row['attack_success_after']:.3f}"
+              f"   loss reduction {row['loss_reduction_mean']:.3f}")
     return 0
 
 
@@ -130,9 +155,19 @@ def main(argv: list[str] | None = None) -> int:
                            "gemini: plan on LLM extraction (needs GEMINI_API_KEY unless cached)")
     demo.add_argument("--cache-dir", default="results/llm_cache",
                       help="response cache for --extractor gemini")
+    demo.add_argument("--catalog", choices=["synthetic", "real"], default="synthetic",
+                      help="synthetic: fictional SYN-CVE ids; real: well-known CVEs from the bundled NVD sample "
+                           "(oracle extractor only)")
+    demo.add_argument("--attack", action="store_true",
+                      help="label each step of the top attack paths with its MITRE ATT&CK technique")
     demo.add_argument("--budget", type=float, default=4.0)
     demo.add_argument("--top", type=int, default=5)
     demo.set_defaults(func=_demo)
+
+    rc = sub.add_parser("real-cve", help="evaluate the planner and baselines on environments built from real CVEs")
+    rc.add_argument("--seeds", type=int, default=20)
+    rc.add_argument("--out", default="results")
+    rc.set_defaults(func=_real_cve)
 
     ev = sub.add_parser("evaluate", help="run the full evaluation and write results/")
     ev.add_argument("--seeds", type=int, default=20)
