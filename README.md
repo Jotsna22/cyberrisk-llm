@@ -25,9 +25,12 @@ text reports ──► extraction ──► Environment model ──► attack g
 | Attacker simulation (`simulation.py`) | Implemented and tested. Attack success rate, critical assets compromised and expected loss, before and after each plan, on the ground truth. Exact for every environment here; Monte Carlo for larger graphs. |
 | Significance tests and confidence intervals (`stats.py`) | Implemented and tested. Stratified paired bootstrap 95% CIs, Wilcoxon signed-rank and sign tests (pure Python; checked against SciPy). |
 | Evaluation harness, robustness experiments | Implemented; results in `results/` |
-| NVD / MITRE ATT&CK ingestion | **Not implemented.** All CVE IDs are synthetic (`SYN-CVE-xxxx`). |
+| NVD import (`nvd.py`) | Implemented and tested. Reads the NVD CVE API 2.0 JSON layout (CVSS v3.x base score, attack vector, privileges required). A sample of 21 well-known real CVEs, refreshed from the live NVD on 2026-11-27, is bundled in `src/cyberrisk/data/nvd_sample.json`. When a record lists several CVSS scores, NVD's own (source `nvd@nist.gov`) is used, then an entry typed Primary, then the first. `scripts/verify_nvd.py` rechecks it against the live NVD (see below). |
+| MITRE ATT&CK mapping (`attack_mapping.py`) | Implemented and tested. A coarse rule-based mapping of each attack step to one of three techniques (T1190, T1210, T1068). |
+| Trusted-inventory check (`inventory.py`, `inventory_eval.py`) | Implemented and tested. A defense against label tampering, not against injection in general: it lets an authoritative asset inventory overrule the extracted exposure and criticality labels (never links or vulnerabilities) and reports every label it overrules. Evaluated on the cached Gemini extractions of the hard reports, with complete, partial and stale inventories. |
+| Real-CVE evaluation (`real_cve_eval.py`) | Implemented and tested. Planner and non-extraction baselines on the same 80 environments with real CVEs. The text extractors and the Gemini cache still use synthetic IDs only. |
 
-All assets, CVE identifiers, and scores are fictional. The synthetic CVE IDs deliberately do not match real NVD entries.
+The assets and topologies are fictional. By default the CVE identifiers and scores are fictional too (`SYN-CVE-xxxx`, deliberately not real NVD entries). With `--catalog real` the weaknesses are drawn from real CVEs, but they are still assigned to fictional assets at random.
 
 ## Install
 
@@ -48,6 +51,22 @@ cyberrisk demo --template hpc --seed 3
 cyberrisk demo --template hpc --seed 3 --extractor rules   # plan on rule-based extraction of the report text
 cyberrisk demo --template hpc --seed 3 --extractor gemini   # plan on Gemini extraction; served from results/llm_cache/, no key needed
 cyberrisk demo --template small_lab --seed 3 --report hard_injected --extractor gemini --show-report   # hard report with injections, trap outcomes
+```
+
+Trusted-inventory check against planted text (offline, from the committed Gemini cache):
+
+```bash
+cyberrisk demo --template small_lab --seed 0 --report hard_injected --extractor gemini --inventory
+cyberrisk inventory-check --seeds 20 --out results      # writes results/inventory_*.csv
+```
+
+Real CVEs and MITRE ATT&CK labels (oracle extractor only):
+
+```bash
+cyberrisk demo --template hpc --seed 3 --catalog real --attack   # each attack step labeled with its ATT&CK technique
+cyberrisk real-cve --seeds 20 --out results                      # baselines vs. planner on real CVEs
+python scripts/verify_nvd.py                                     # needs internet: compare the bundled sample with the live NVD
+python scripts/verify_nvd.py --refresh                           # overwrite the sample with live NVD data
 ```
 
 Run the full evaluation (4 templates × 20 seeds = 80 environments, under a minute):
@@ -78,7 +97,7 @@ The model defaults to `gemini-3.5-flash-lite`, the model the cache was built wit
 pytest -q
 ```
 
-The suite has 105 tests. They cover the risk math (including 5-hop paths), the hard-report generator and trap scoring, the template parser, the extractors (including the stub-client LLM path and malformed model output), defense planning and budgets, the budget sweep, planner-input warnings, the attacker simulation (hand-calculated cases, exact vs. Monte Carlo), the statistics (checked against SciPy reference values), deterministic generation, metrics, the CLI, and offline reproduction from the committed cache.
+The suite has 146 tests. They cover the risk math (including 5-hop paths), the hard-report generator and trap scoring, the template parser, the extractors (including the stub-client LLM path and malformed model output), defense planning and budgets, the budget sweep, planner-input warnings, the inventory check (reconciliation, imperfect inventories, offline reproduction), the attacker simulation (hand-calculated cases, exact vs. Monte Carlo), the statistics (checked against SciPy reference values), deterministic generation, metrics, the CLI, and offline reproduction from the committed cache.
 
 ## Method in brief
 
@@ -142,6 +161,44 @@ Budget sweep (`results/budget_sweep.csv`). The gap between topology-aware planni
 | 4 | 0.771 / 0.782 / 0.177 | 0.894 / 0.902 / 0.051 | 0.999 / 0.998 / 0.004 |
 
 The greedy planner is not optimal. At budget 2, `rule_based` beats it in 13 of 80 environments. In 12 of them the entry host has two equally exploitable vulnerabilities. Patching either one alone removes no risk, because the edge keeps the other one's probability, so greedy, which picks one control at a time, never chooses it. Patching both closes the entry point, and `rule_based` happens to do exactly that (e.g. `small_lab` seed 8, `hpc` seeds 0 and 2). A planner that considers pairs of controls, or an exact search, would fix this.
+
+### Inventory check (`results/inventory_*.csv`)
+
+The injections in the hard reports were the project's main weakness: one change-log line saying a host "no longer accepts traffic from the internet" fooled Gemini in 77 of 80 reports, and the planner, with no entry point left, recommended nothing. The inventory check lets a trusted asset list overrule the extracted `internet_exposed` and `criticality` labels before planning. It defends against planted text that tampers with those two labels. It does not defend against injection in general: it never edits links or vulnerabilities, so text that adds or removes a link, a vulnerability or an asset passes straight through.
+
+Same 80 environments, same cached Gemini extractions, budget 4. Cells under "fooled" are planted lines that changed the model (instruction / unverified message / plausible update), out of 80.
+
+| Report | Inventory | Risk reduction [95% CI] | Attack success after plan | Planted lines that fooled Gemini |
+|---|---|---|---|---|
+| hard | none | 0.966 [0.928, 0.995] | 0.017 | n/a |
+| hard + injections | none | 0.195 [0.129, 0.266] | 0.436 | 32 / 9 / 77 |
+| hard + injections | complete and correct | 0.969 [0.932, 0.998] | 0.017 | 0 / 0 / 0 |
+| hard + injections | lists 75% of assets | 0.750 [0.654, 0.845] | 0.129 | 9 / 4 / 20 |
+| hard + injections | lists 50% of assets | 0.541 [0.446, 0.633] | 0.261 | 13 / 6 / 37 |
+| hard + injections | lists 25% of assets | 0.392 [0.295, 0.487] | 0.342 | 25 / 6 / 57 |
+| hard + injections | complete, 25% of entries wrong | 0.651 [0.567, 0.728] | 0.246 | 24 / 25 / 28 |
+| hard | complete, 25% of entries wrong | 0.652 [0.567, 0.731] | 0.239 | n/a |
+
+Paired comparison on the injected reports, corrected minus raw plans, complete inventory: +0.774 [+0.699, +0.846] risk reduction, better in 64 environments, tied in 16, worse in 0 (Wilcoxon p = 2.1e-14). Full tables: `results/inventory_summary.csv` and `results/inventory_significance.csv`.
+
+Findings:
+- **A correct inventory removes the damage.** Risk reduction goes from 0.195 to 0.969, about what the model reaches on the same text without injections (0.966). Every one of the 77 fooled exposure labels and 41 fooled criticality labels is overruled.
+- **It also works as a detector.** Even if the labels are not overwritten, the check flags the injected labels (33 / 10 / 77 flagged against 32 / 9 / 77 fooled, so it flags every fooled label, plus a few that the model got wrong in other ways). In 77 of 80 injected reports at least one label was flagged. On the clean hard reports it flags nothing, because Gemini read exposure and criticality correctly there.
+- **A partial inventory helps in proportion to its coverage.** Listing 75% of the assets recovers most of the loss (0.750), 25% only a little (0.392). Injections aimed at assets the inventory does not list still succeed.
+- **A wrong inventory is dangerous.** With 25% of entries wrong, the check lowers the clean-report result from 0.966 to 0.652 (-0.314 [-0.399, -0.233]), because it overrules correct extractions. It still beats no check on the injected reports (0.651 vs. 0.195), but only because the injections hurt so much. The check is only worth using with an inventory that is actually maintained; its discrepancy report is the signal to go and look.
+- **It does not fix everything.** Link mistakes (deny rules read as paths, removed rules kept) are outside its scope, which is why the clean hard reports stay at 0.966 and not 1.0.
+
+### Real CVEs (`results/real_cve_summary.csv`)
+
+The same 80 environments, budget 4, with weaknesses drawn from 21 real CVEs (Log4Shell, EternalBlue, Heartbleed and others) instead of the synthetic catalog. Only configurations that need no text extraction are run. This is a stress test with real CVSS profiles, not a real-world evaluation: the CVEs are assigned to the fictional assets at random, and 14 of the 21 are network-exploitable with no privileges required.
+
+| Configuration | Risk reduction (mean ± sd) | Attack success, before → after |
+|---|---|---|
+| `cvss_only` | 0.643 ± 0.355 | 0.712 → 0.326 |
+| `rule_based` | 0.921 ± 0.224 | 0.712 → 0.055 |
+| `graph_oracle_upper_bound` | 0.972 ± 0.099 | 0.712 → 0.063 |
+
+The ordering matches the synthetic results (graph planner > rule-based > CVSS-only on risk reduction). The graph planner's attack-success-after is not lower than the rule-based baseline's here (0.063 vs. 0.055), so on that measure the two are about equal. This is a single evaluation on one small CVE sample, with no significance tests.
 
 Model-level robustness (perturbing the planner's input model):
 
@@ -214,9 +271,14 @@ Findings:
 
 The plausible-update injection is worded exactly like a genuine correction, so no text-only extractor can be expected to reject it. The defense has to come from outside the report, for example by checking exposure and criticality against an independent asset inventory before planning.
 
-Full tables: `results/summary.json`, `results/per_environment.csv`, `results/model_robustness.csv`, `results/budget_sweep.csv`, `results/llm_robustness.csv`, `results/hard_text.csv`, `results/hard_text_traps.csv`, `results/significance.csv`.
+Full tables: `results/summary.json`, `results/per_environment.csv`, `results/model_robustness.csv`, `results/budget_sweep.csv`, `results/llm_robustness.csv`, `results/hard_text.csv`, `results/hard_text_traps.csv`, `results/significance.csv`, `results/inventory_summary.csv`, `results/inventory_per_environment.csv`, `results/inventory_significance.csv`.
 
 ## Limitations
+
+* The inventory in the "complete and correct" row is built from the ground truth, so that row is a ceiling that assumes the organisation keeps an accurate asset list, not a measurement of how well real inventories work. The partial and stale rows show how fast the benefit falls without that assumption. The check also does not defend against an attacker who can edit the inventory itself, and it was tested with one model, one run and three fixed injection wordings.
+* The real-CVE sample is small (21 CVEs, mostly network-exploitable and high severity) and was first typed in by hand and then refreshed from the live NVD with `python scripts/verify_nvd.py --refresh`; the hand-entered version had 4 wrong scores out of 21. NVD rescores CVEs over time, so rerun `python scripts/verify_nvd.py` to check for changes (and rerun `cyberrisk real-cve` if any). The CVSS fields come from NVD, but the CVEs are placed on fictional assets, so this shows the pipeline works on real vulnerability data, not that the networks are realistic.
+* The ATT&CK mapping uses one technique per kind of step (position plus attack vector). It is a labeling aid, not a validated mapping of real attacker behavior. A local-vector weakness on a host reached over the network is labeled T1068 because it cannot be exploited remotely, only from a foothold on the host, which is what T1068 describes. The attack graph has no notion of foothold and approximates it by the permitted link plus the low exploitability of a local vector (0.1).
+* The text extractors (`RuleBasedExtractor`, `TemplateExtractor`) and the cached Gemini responses only understand `SYN-CVE-xxxx` IDs, so `--catalog real` works with the oracle extractor only.
 
 * The LLM is evaluated with one model (`gemini-3.5-flash-lite`) and one run. On the easy reports, a parser for their twelve phrasings matches it exactly. The hard reports show the LLM generalizing to formats the parser was not written for, but they are still generated text: the phrase pool is larger, but finite, and a parser could be written for it too. They are not real analyst reports.
 * The injection results are for a single model with the default extraction prompt. No prompt-level defenses were tried. The prompt is not part of the cache key, so changing the prompt requires a fresh cache.
@@ -230,10 +292,11 @@ Full tables: `results/summary.json`, `results/per_environment.csv`, `results/mod
 ## Repository layout
 
 ```
-src/cyberrisk/   models.py  graph.py  defense.py  baselines.py  synthetic.py
+src/cyberrisk/   models.py  graph.py  defense.py  baselines.py  synthetic.py  nvd.py  attack_mapping.py  real_cve_eval.py  inventory.py  inventory_eval.py
+                 data/nvd_sample.json
                  hard_reports.py  extraction.py  metrics.py  simulation.py  stats.py  experiments.py  cli.py
 tests/           unit tests (pytest)
-scripts/         run_evaluation.py
+scripts/         run_evaluation.py  verify_nvd.py
 results/         generated CSV/JSON evaluation outputs
 results_superseded/   earlier run, kept for transparency
 report/          final project report (LaTeX)

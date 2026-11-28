@@ -122,8 +122,15 @@ DISTRACTORS = [
 ]
 
 
-def generate_environment(template: str, seed: int) -> Environment:
-    """Deterministically build one environment from a topology template and a seed."""
+def generate_environment(
+    template: str, seed: int, catalog: list[tuple[str, float, str, str]] | None = None
+) -> Environment:
+    """Deterministically build one environment from a topology template and a seed.
+
+    `catalog` is the pool of (cve_id, cvss, attack_vector, privilege) to draw from; the
+    default is the synthetic SYN-CVE catalog. Pass `nvd.real_catalog()` for real CVEs.
+    """
+    pool = catalog if catalog is not None else CVE_CATALOG
     spec = TEMPLATES[template]
     rng = random.Random(f"{template}-{seed}")
     env = Environment(name=f"{template}-seed{seed}")
@@ -135,7 +142,7 @@ def generate_environment(template: str, seed: int) -> Environment:
         count = rng.choice([1, 2, 2, 3])  # every asset carries at least one weakness
         if asset.internet_exposed:
             count = max(count, 2)
-        for cve, cvss, av, priv in rng.sample(CVE_CATALOG, count):
+        for cve, cvss, av, priv in rng.sample(pool, count):
             asset.add_vulnerability(Vulnerability(cve, cvss, av, priv))
     return env
 
