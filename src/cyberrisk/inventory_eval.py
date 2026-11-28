@@ -121,7 +121,7 @@ def _write(path: Path, rows: list[dict]) -> None:
             if key not in fields:
                 fields.append(key)
     with path.open("w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer = csv.DictWriter(fh, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 

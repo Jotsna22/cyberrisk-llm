@@ -37,7 +37,7 @@ def run_real_cve(out_dir: Path, seeds: int = 20) -> list[dict]:
 
     fields = list(asdict(rows[0]).keys())
     with (out_dir / "real_cve_per_environment.csv").open("w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer = csv.DictWriter(fh, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         writer.writerows(asdict(r) for r in rows)
 
@@ -54,7 +54,7 @@ def run_real_cve(out_dir: Path, seeds: int = 20) -> list[dict]:
             "catalog_size": len(catalog),
         })
     with (out_dir / "real_cve_summary.csv").open("w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(summary[0].keys()))
+        writer = csv.DictWriter(fh, fieldnames=list(summary[0].keys()), lineterminator="\n")
         writer.writeheader()
         writer.writerows(summary)
     return summary

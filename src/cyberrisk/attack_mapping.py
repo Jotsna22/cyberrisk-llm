@@ -7,6 +7,12 @@ chosen from the step's position and the vulnerability exploited:
   internal hop, network/adjacent vuln  T1210 Exploitation of Remote Services      (Lateral Movement)
   hop using a local-vector vuln        T1068 Exploitation for Privilege Escalation (Privilege Escalation)
 
+Why T1068 for a local-vector weakness on a host that is reached over the network: such a
+weakness cannot be exploited from afar, only from a foothold on the host itself, which is
+what T1068 describes. The attack graph has no notion of foothold; it approximates it by the
+permitted link to the host and the low exploitability factor of a local vector (0.1), so the
+label marks the step as "needs code execution on the target first", not as a remote exploit.
+
 The vulnerability shown for a step is the one the risk engine scores: the destination's
 most exploitable weakness (ties broken by higher CVSS, then CVE id).
 """

@@ -5,6 +5,8 @@ three CVSS v3.x fields the risk engine uses: base score, attack vector and privi
 required. A small sample of well-known CVEs, refreshed from the live NVD, ships with the
 package in `data/nvd_sample.json`; `scripts/verify_nvd.py` rechecks it against the live NVD.
 
+When a record lists several CVSS scores, NVD's own (source nvd@nist.gov) is used; see `_pick_entry`.
+
 Mapping into the model's categories:
   attackVector        NETWORK -> network; ADJACENT_NETWORK / ADJACENT -> adjacent;
                       LOCAL / PHYSICAL -> local (the model has no physical category)
@@ -31,14 +33,39 @@ PRIVILEGE_MAP = {"NONE": "none", "LOW": "low", "HIGH": "high"}
 METRIC_KEYS = ("cvssMetricV31", "cvssMetricV30")  # newest first; CVSS v2 has no comparable fields
 
 
+NVD_SOURCE = "nvd@nist.gov"
+
+
+def _pick_entry(metrics: dict[str, Any]) -> dict[str, Any] | None:
+    """Choose the CVSS v3.x entry to use for a record.
+
+    A record can list several scores, one per source (NVD itself, the CNA that assigned the
+    CVE, other CNAs), and the order is not meaningful. In order of preference:
+      1. NVD's own score (source nvd@nist.gov), v3.1 before v3.0
+      2. an entry typed "Primary"
+      3. the first entry
+    Taking the first entry is wrong for records that have no "Primary" entry and list a
+    vendor's score first: CVE-2020-1472 would read as 5.5 local instead of NVD's 10.0 network.
+    """
+    entries = [e for key in METRIC_KEYS for e in (metrics.get(key) or [])]
+    for entry in entries:
+        if entry.get("source") == NVD_SOURCE:
+            return entry
+    for entry in entries:
+        if entry.get("type") == "Primary":
+            return entry
+    return entries[0] if entries else None
+
+
 def _pick_metric(metrics: dict[str, Any]) -> dict[str, Any] | None:
-    for key in METRIC_KEYS:
-        entries = metrics.get(key) or []
-        if not entries:
-            continue
-        primary = [e for e in entries if e.get("type") == "Primary"]
-        return (primary or entries)[0]["cvssData"]
-    return None
+    entry = _pick_entry(metrics)
+    return entry["cvssData"] if entry else None
+
+
+def metric_source(cve: dict[str, Any]) -> str | None:
+    """Which source's score `vulnerability_from_nvd` uses for this record."""
+    entry = _pick_entry(cve.get("metrics", {}))
+    return entry.get("source") if entry else None
 
 
 def vulnerability_from_nvd(cve: dict[str, Any]) -> Vulnerability | None:

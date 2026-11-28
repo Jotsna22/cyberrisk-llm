@@ -5,7 +5,9 @@ from importlib import resources
 import pytest
 
 from cyberrisk.models import Vulnerability
-from cyberrisk.nvd import _pick_metric, load_nvd_file, parse_nvd, real_catalog, vulnerability_from_nvd
+from cyberrisk.nvd import (
+    _pick_metric, load_nvd_file, metric_source, parse_nvd, real_catalog, vulnerability_from_nvd,
+)
 from cyberrisk.synthetic import CVE_CATALOG, TEMPLATES, generate_environment
 
 
@@ -103,3 +105,46 @@ def test_real_environments_are_deterministic(template):
     a = generate_environment(template, 1, catalog=real_catalog())
     b = generate_environment(template, 1, catalog=real_catalog())
     assert {n: sorted(x.vulns) for n, x in a.assets.items()} == {n: sorted(x.vulns) for n, x in b.assets.items()}
+
+
+def _entry(source, kind, score, av, pr):
+    return {"source": source, "type": kind,
+            "cvssData": {"baseScore": score, "attackVector": av, "privilegesRequired": pr}}
+
+
+def test_nvd_own_score_beats_a_vendor_score_listed_first_without_a_primary_entry():
+    # The layout of CVE-2020-1472 and CVE-2021-26855 in the live NVD: no "Primary" entry,
+    # the vendor's (Microsoft's) score first, NVD's own score second.
+    cve = {"id": "CVE-2000-0008", "metrics": {"cvssMetricV31": [
+        _entry("secure@microsoft.com", "Secondary", 5.5, "LOCAL", "LOW"),
+        _entry("nvd@nist.gov", "Secondary", 10.0, "NETWORK", "NONE")]}}
+    assert vulnerability_from_nvd(cve) == Vulnerability("CVE-2000-0008", 10.0, "network", "none")
+    assert metric_source(cve) == "nvd@nist.gov"
+
+
+def test_selection_order_nvd_then_primary_then_first():
+    primary_only = {"cvssMetricV31": [_entry("a@x", "Secondary", 1.0, "LOCAL", "HIGH"),
+                                      _entry("b@x", "Primary", 6.0, "NETWORK", "LOW")]}
+    assert _pick_metric(primary_only)["baseScore"] == 6.0
+    first_only = {"cvssMetricV31": [_entry("a@x", "Secondary", 1.0, "LOCAL", "HIGH"),
+                                    _entry("b@x", "Secondary", 6.0, "NETWORK", "LOW")]}
+    assert _pick_metric(first_only)["baseScore"] == 1.0
+    nvd_v30 = {"cvssMetricV31": [_entry("a@x", "Primary", 9.0, "NETWORK", "NONE")],
+               "cvssMetricV30": [_entry("nvd@nist.gov", "Primary", 8.0, "NETWORK", "LOW")]}
+    assert _pick_metric(nvd_v30)["baseScore"] == 8.0
+    assert _pick_metric({}) is None
+
+
+def test_bundled_sample_pins_known_nvd_values():
+    """Independent of the parser's own logic: values read off nvd.nist.gov for the two CVEs
+    whose records list a vendor score first."""
+    by_id = {v.cve_id: v for v in load_nvd_file()}
+    assert by_id["CVE-2020-1472"] == Vulnerability("CVE-2020-1472", 10.0, "network", "none")
+    assert by_id["CVE-2021-26855"] == Vulnerability("CVE-2021-26855", 9.8, "network", "none")
+    assert by_id["CVE-2021-44228"] == Vulnerability("CVE-2021-44228", 10.0, "network", "none")
+
+
+def test_every_sample_record_uses_nvds_own_score():
+    text = resources.files("cyberrisk").joinpath("data/nvd_sample.json").read_text()
+    for item in json.loads(text)["vulnerabilities"]:
+        assert metric_source(item["cve"]) == "nvd@nist.gov", item["cve"]["id"]
